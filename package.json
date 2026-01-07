@@ -11,7 +11,7 @@
     "test:integration": "jest --testPathPattern=tests/integration",
     "test:coverage": "jest --coverage",
     "lint": "eslint src --ext .ts",
-    "start": "node dist/index.js"
+    "start": "node dist/server.js"
   },
   "keywords": [
     "roi",
