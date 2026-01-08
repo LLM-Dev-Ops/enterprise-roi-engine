@@ -1,6 +1,9 @@
 # Enterprise ROI Engine - Cloud Run Deployment
 FROM node:20-alpine AS builder
 
+# Install build dependencies for native modules
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
 # Copy package files
