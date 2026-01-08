@@ -1,0 +1,661 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agentics.ai/contracts/roi/v1/request.schema.json",
+  "title": "ROI Engine Request",
+  "description": "Schema for incoming ROI calculation requests to the enterprise-roi-engine",
+  "type": "object",
+  "required": ["simulation", "erpMetadata", "costBaseline"],
+  "additionalProperties": false,
+  "properties": {
+    "correlationId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9-]{1,64}$",
+      "description": "Correlation ID for distributed tracing"
+    },
+    "simulation": {
+      "$ref": "#/$defs/SimulationOutput"
+    },
+    "erpMetadata": {
+      "$ref": "#/$defs/ERPMetadata"
+    },
+    "costBaseline": {
+      "$ref": "#/$defs/CostBaseline"
+    },
+    "options": {
+      "$ref": "#/$defs/CalculationOptions"
+    }
+  },
+  "$defs": {
+    "SimulationOutput": {
+      "type": "object",
+      "required": ["metadata", "scenario", "decisions", "resourceDeltas", "workflowTraces", "confidenceIntervals"],
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/SimulationMetadata"
+        },
+        "scenario": {
+          "$ref": "#/$defs/SimulationScenario"
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DecisionNode"
+          }
+        },
+        "resourceDeltas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourceDelta"
+          }
+        },
+        "workflowTraces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkflowTrace"
+          }
+        },
+        "confidenceIntervals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SimulationConfidenceIntervals"
+          }
+        }
+      }
+    },
+    "SimulationMetadata": {
+      "type": "object",
+      "required": ["simulationId", "engineVersion", "timestamp", "checksum"],
+      "additionalProperties": false,
+      "properties": {
+        "simulationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "engineVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checksum": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "SimulationScenario": {
+      "type": "object",
+      "required": ["name", "baselineId", "timeHorizonMonths", "confidenceLevel"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "baselineId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "timeHorizonMonths": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "confidenceLevel": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "DecisionNode": {
+      "type": "object",
+      "required": ["nodeId", "parentId", "decision", "probability", "outcomeMetrics"],
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "parentId": {
+          "type": ["string", "null"],
+          "format": "uuid"
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "outcomeMetrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "ResourceDelta": {
+      "type": "object",
+      "required": ["period", "resourceType", "quantity", "unit", "direction"],
+      "additionalProperties": false,
+      "properties": {
+        "period": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resourceType": {
+          "type": "string",
+          "enum": ["FTE", "COMPUTE", "LICENSE", "CUSTOM"]
+        },
+        "quantity": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["increase", "decrease"]
+        }
+      }
+    },
+    "WorkflowTrace": {
+      "type": "object",
+      "required": ["traceId", "workflowName", "steps", "totalDuration"],
+      "additionalProperties": false,
+      "properties": {
+        "traceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workflowName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkflowStep"
+          }
+        },
+        "totalDuration": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "WorkflowStep": {
+      "type": "object",
+      "required": ["stepId", "stepName", "duration", "resourcesConsumed"],
+      "additionalProperties": false,
+      "properties": {
+        "stepId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "stepName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "resourcesConsumed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "SimulationConfidenceIntervals": {
+      "type": "object",
+      "required": ["metricName", "p10", "p25", "p50", "p75", "p90"],
+      "additionalProperties": false,
+      "properties": {
+        "metricName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "p10": {
+          "type": "number"
+        },
+        "p25": {
+          "type": "number"
+        },
+        "p50": {
+          "type": "number"
+        },
+        "p75": {
+          "type": "number"
+        },
+        "p90": {
+          "type": "number"
+        }
+      }
+    },
+    "ERPMetadata": {
+      "type": "object",
+      "required": ["erpSystem", "erpVersion", "extractTimestamp", "entities", "chartOfAccounts", "costCenters", "fiscalCalendar", "reportingCurrency"],
+      "additionalProperties": false,
+      "properties": {
+        "erpSystem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "erpVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extractTimestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityMapping"
+          }
+        },
+        "chartOfAccounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GLAccount"
+          }
+        },
+        "costCenters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CostCenter"
+          }
+        },
+        "fiscalCalendar": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FiscalPeriod"
+          }
+        },
+        "reportingCurrency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        }
+      }
+    },
+    "EntityMapping": {
+      "type": "object",
+      "required": ["erpEntityId", "entityType", "displayName", "parentId", "attributes"],
+      "additionalProperties": false,
+      "properties": {
+        "erpEntityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityType": {
+          "type": "string",
+          "enum": ["COST_CENTER", "DEPARTMENT", "PROJECT", "BUSINESS_UNIT", "LEGAL_ENTITY"]
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "parentId": {
+          "type": ["string", "null"]
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "GLAccount": {
+      "type": "object",
+      "required": ["accountId", "accountName", "accountType", "naturalSign", "currency", "isActive"],
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accountName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "accountType": {
+          "type": "string",
+          "enum": ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"]
+        },
+        "naturalSign": {
+          "type": "string",
+          "enum": ["DEBIT", "CREDIT"]
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "isActive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "CostCenter": {
+      "type": "object",
+      "required": ["costCenterId", "name", "parentCostCenterId", "hierarchyLevel", "acceptsDirectCharges", "currency", "isActive"],
+      "additionalProperties": false,
+      "properties": {
+        "costCenterId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "parentCostCenterId": {
+          "type": ["string", "null"]
+        },
+        "hierarchyLevel": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "acceptsDirectCharges": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "isActive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "FiscalPeriod": {
+      "type": "object",
+      "required": ["year", "period", "startDate", "endDate"],
+      "additionalProperties": false,
+      "properties": {
+        "year": {
+          "type": "integer",
+          "minimum": 2000,
+          "maximum": 2100
+        },
+        "period": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endDate": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "CostBaseline": {
+      "type": "object",
+      "required": ["baselineId", "snapshotTimestamp", "costModelVersion", "laborRates", "infrastructureCosts", "licenseCosts", "overheadFactors", "riskWeights", "discountRate", "baselinePeriod"],
+      "additionalProperties": false,
+      "properties": {
+        "baselineId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "snapshotTimestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "costModelVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "laborRates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LaborRate"
+          }
+        },
+        "infrastructureCosts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InfrastructureCost"
+          }
+        },
+        "licenseCosts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LicenseCost"
+          }
+        },
+        "overheadFactors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OverheadFactor"
+          }
+        },
+        "riskWeights": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RiskWeightMatrix"
+          }
+        },
+        "discountRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "baselinePeriod": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "LaborRate": {
+      "type": "object",
+      "required": ["roleId", "roleName", "fullyLoadedRate", "currency", "effectiveDate"],
+      "additionalProperties": false,
+      "properties": {
+        "roleId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "roleName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fullyLoadedRate": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d{1,4})?$"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "effectiveDate": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "InfrastructureCost": {
+      "type": "object",
+      "required": ["resourceType", "unitCost", "unit", "currency", "effectiveDate"],
+      "additionalProperties": false,
+      "properties": {
+        "resourceType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unitCost": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d{1,4})?$"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "effectiveDate": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "LicenseCost": {
+      "type": "object",
+      "required": ["licenseType", "vendorName", "annualCost", "perUserCost", "currency", "effectiveDate"],
+      "additionalProperties": false,
+      "properties": {
+        "licenseType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vendorName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "annualCost": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d{1,4})?$"
+        },
+        "perUserCost": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d{1,4})?$"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "effectiveDate": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "OverheadFactor": {
+      "type": "object",
+      "required": ["costCenterId", "directRate", "indirectRate", "sharedServicesRate", "effectiveDate"],
+      "additionalProperties": false,
+      "properties": {
+        "costCenterId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "directRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "indirectRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "sharedServicesRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "effectiveDate": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "RiskWeightMatrix": {
+      "type": "object",
+      "required": ["categoryId", "categoryName", "baseWeight", "volatilityMultiplier", "confidenceDecayRate", "maxWeight"],
+      "additionalProperties": false,
+      "properties": {
+        "categoryId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "categoryName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseWeight": {
+          "type": "number",
+          "minimum": 0
+        },
+        "volatilityMultiplier": {
+          "type": "number",
+          "minimum": 0
+        },
+        "confidenceDecayRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "maxWeight": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "CalculationOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discountRateOverride": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "defaultHorizonMonths": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "includeSensitivity": {
+          "type": "boolean"
+        },
+        "confidenceLevels": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "riskToleranceLevel": {
+          "type": "string",
+          "enum": ["LOW", "MODERATE", "HIGH"]
+        },
+        "strictValidation": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

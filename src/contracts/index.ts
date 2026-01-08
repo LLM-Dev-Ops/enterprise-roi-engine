@@ -16,3 +16,6 @@ export * from './artifacts';
 
 // Internal types
 export * from './internal';
+
+// Contract validation
+export * from './validation';

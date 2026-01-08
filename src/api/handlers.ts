@@ -2,22 +2,21 @@
  * API Request Handlers
  * Framework-agnostic request handlers for the Enterprise ROI Engine API.
  * These handlers contain the business logic and can be adapted to any HTTP framework.
+ *
+ * IMPORTANT: Contract validation is enforced at the request entry boundary (server.ts).
+ * Handlers receive pre-validated data and do not perform redundant validation.
+ * All responses include execution proof demonstrating platform participation.
  */
 
 import { v4 as uuidv4 } from 'uuid';
 
 import {
-  SimulationOutput,
-  ERPMetadata,
-  CostBaseline,
   ArtifactBundle,
   ExecutionStatus,
   ValidationStatus,
-  FiscalPeriod,
-  SimulationOutputSchema,
-  ERPMetadataSchema,
-  CostBaselineSchema,
   FinancialArtifact,
+  getContractValidator,
+  ExecutionProof,
 } from '../contracts';
 
 import {
@@ -47,10 +46,7 @@ import {
   ExecutionMetrics,
   APIError,
   APIErrorCode,
-  InputValidationResult,
   ValidationIssue,
-  CrossValidationResult,
-  CrossValidationIssue,
   CorrelationId,
 } from './types';
 
@@ -164,13 +160,18 @@ export function createHandlerContext(
 /**
  * Handles the POST /api/v1/calculate endpoint.
  * Performs end-to-end ROI calculation.
+ *
+ * NOTE: Input validation is performed at the request boundary (server.ts).
+ * This handler receives pre-validated data from contract enforcement.
  */
 export async function handleCalculateROI(
   request: ROIEngineRequest,
-  context: HandlerContext
+  context: HandlerContext,
+  executionProof?: ExecutionProof
 ): Promise<ROIEngineResponse> {
   const correlationId = request.correlationId ?? uuidv4();
   const startTime = Date.now();
+  const contractValidator = getContractValidator();
 
   const phaseTimings: {
     ingestionMs: number;
@@ -189,26 +190,10 @@ export async function handleCalculateROI(
   try {
     const { config } = context;
     const options = request.options ?? {};
-    const warnings: string[] = [];
 
-    // Phase 1: Validate inputs (ingestion validation)
+    // Phase 1: Ingestion - Data already validated at boundary
+    // No manual validation needed - contract enforced at entry
     const ingestionStart = Date.now();
-    const validationResult = validateInputs(
-      request.simulation,
-      request.erpMetadata,
-      request.costBaseline
-    );
-
-    if (!validationResult.valid) {
-      return createErrorResponse(
-        correlationId,
-        APIErrorCode.VALIDATION_ERROR,
-        'Input validation failed',
-        { validationErrors: validationResult.errors }
-      );
-    }
-
-    warnings.push(...validationResult.warnings);
     phaseTimings.ingestionMs = Date.now() - ingestionStart;
 
     // Phase 2: Normalization
@@ -230,21 +215,31 @@ export async function handleCalculateROI(
         correlationId,
         APIErrorCode.NORMALIZATION_ERROR,
         'Normalization failed',
-        { errors: normalizationResult.errors }
+        { errors: normalizationResult.errors },
+        executionProof
       );
     }
 
-    warnings.push(...normalizationResult.warnings);
     phaseTimings.normalizationMs = Date.now() - normalizationStart;
 
     // Phase 3: Attribution
     const attributionStart = Date.now();
-    const defaultFiscalPeriod = getDefaultFiscalPeriod(request.erpMetadata);
+    // Use first fiscal period from ERP metadata - no fallback
+    const fiscalPeriod = request.erpMetadata.fiscalCalendar[0];
+    if (!fiscalPeriod) {
+      return createErrorResponse(
+        correlationId,
+        APIErrorCode.VALIDATION_ERROR,
+        'No fiscal period defined in ERP metadata',
+        { field: 'erpMetadata.fiscalCalendar' },
+        executionProof
+      );
+    }
 
     const attributionConfig: AttributionConfig = {
       erpMetadata: request.erpMetadata,
       costBaseline: request.costBaseline,
-      defaultFiscalPeriod,
+      defaultFiscalPeriod: fiscalPeriod,
     };
 
     const attributionOrchestrator = new AttributionOrchestrator(attributionConfig);
@@ -308,13 +303,24 @@ export async function handleCalculateROI(
     const financialArtifact = extractFinancialArtifact(exportResult.bundle);
 
     // Build metrics
+    const executionDurationMs = Date.now() - startTime;
     const metrics: ExecutionMetrics = {
       decisionsProcessed: normalizationResult.summary.decisionsNormalized,
       totalSavingsIdentified: deltaResult.portfolioMetrics.totalGrossSavings,
-      executionDurationMs: Date.now() - startTime,
+      executionDurationMs,
       phasesCompleted: 5,
       phaseBreakdown: phaseTimings,
     };
+
+    // Finalize execution proof if provided
+    let finalProof = executionProof;
+    if (finalProof) {
+      finalProof = contractValidator.finalizeExecutionProof(
+        finalProof,
+        exportResult.bundle,
+        executionDurationMs
+      );
+    }
 
     const response: ROIEngineResponse = {
       correlationId,
@@ -323,20 +329,17 @@ export async function handleCalculateROI(
       status: ExecutionStatus.SUCCESS,
       artifactBundle: exportResult.bundle,
       metrics,
+      ...(financialArtifact && { financialArtifact }),
+      ...(finalProof && { executionProof: finalProof }),
     };
-    if (financialArtifact) {
-      (response as { financialArtifact: FinancialArtifact }).financialArtifact = financialArtifact;
-    }
-    if (warnings.length > 0) {
-      (response as { warnings: readonly string[] }).warnings = warnings;
-    }
     return response;
   } catch (error) {
     return createErrorResponse(
       correlationId,
       APIErrorCode.CALCULATION_ERROR,
       error instanceof Error ? error.message : 'Unknown error during calculation',
-      { stack: error instanceof Error ? error.stack : 'Unknown' }
+      { stack: error instanceof Error ? error.stack : 'Unknown' },
+      executionProof
     );
   }
 }
@@ -347,87 +350,96 @@ export async function handleCalculateROI(
 
 /**
  * Handles the POST /api/v1/validate endpoint.
- * Validates inputs without performing calculation.
+ * Uses contract validation to validate inputs without performing calculation.
+ * This provides a preview of whether a full calculate request would pass validation.
  */
 export async function handleValidateInput(
   request: ValidationRequest,
-  _context: HandlerContext
+  _context: HandlerContext,
+  executionProof?: ExecutionProof
 ): Promise<ValidationResponse> {
   const correlationId = request.correlationId ?? uuidv4();
+  const contractValidator = getContractValidator();
   const inputsValidated: string[] = [];
 
-  let totalErrors = 0;
-  let totalWarnings = 0;
+  // Build a full request object for contract validation
+  const fullRequest = {
+    simulation: request.simulation,
+    erpMetadata: request.erpMetadata,
+    costBaseline: request.costBaseline,
+  };
 
-  // Build results object
-  const resultsBuilder: {
-    simulation?: InputValidationResult;
-    erpMetadata?: InputValidationResult;
-    costBaseline?: InputValidationResult;
-    crossValidation?: CrossValidationResult;
-  } = {};
-
-  // Validate simulation if provided
   if (request.simulation) {
     inputsValidated.push('simulation');
-    const result = validateSimulation(request.simulation);
-    resultsBuilder.simulation = result;
-    totalErrors += result.errors.length;
-    totalWarnings += result.warnings.length;
   }
-
-  // Validate ERP metadata if provided
   if (request.erpMetadata) {
     inputsValidated.push('erpMetadata');
-    const result = validateERPMetadata(request.erpMetadata);
-    resultsBuilder.erpMetadata = result;
-    totalErrors += result.errors.length;
-    totalWarnings += result.warnings.length;
   }
-
-  // Validate cost baseline if provided
   if (request.costBaseline) {
     inputsValidated.push('costBaseline');
-    const result = validateCostBaseline(request.costBaseline);
-    resultsBuilder.costBaseline = result;
-    totalErrors += result.errors.length;
-    totalWarnings += result.warnings.length;
   }
 
-  // Cross-validation if multiple inputs provided and requested
-  if (
-    request.crossValidate !== false &&
-    request.simulation &&
-    request.erpMetadata &&
-    request.costBaseline
-  ) {
-    const crossResult = performCrossValidation(
-      request.simulation,
-      request.erpMetadata,
-      request.costBaseline
-    );
-    resultsBuilder.crossValidation = crossResult;
-    if (!crossResult.valid) {
-      totalErrors += crossResult.issues.length;
-    }
+  // Use contract validation
+  const validationResult = contractValidator.validate(fullRequest);
+
+  const errors: ValidationIssue[] = validationResult.errors.map(error => ({
+    path: error.path,
+    message: error.message,
+    code: `SCHEMA_${error.keyword.toUpperCase()}`,
+    severity: 'error' as const,
+  }));
+
+  const allValid = validationResult.valid;
+
+  // Build results object conditionally
+  const results: {
+    simulation?: { valid: boolean; errors: readonly ValidationIssue[]; warnings: readonly ValidationIssue[]; schemaVersion: string };
+    erpMetadata?: { valid: boolean; errors: readonly ValidationIssue[]; warnings: readonly ValidationIssue[]; schemaVersion: string };
+    costBaseline?: { valid: boolean; errors: readonly ValidationIssue[]; warnings: readonly ValidationIssue[]; schemaVersion: string };
+  } = {};
+
+  if (request.simulation) {
+    results.simulation = {
+      valid: !errors.some(e => e.path.startsWith('/simulation')),
+      errors: errors.filter(e => e.path.startsWith('/simulation')),
+      warnings: [],
+      schemaVersion: contractValidator.getSchemaVersion(),
+    };
+  }
+  if (request.erpMetadata) {
+    results.erpMetadata = {
+      valid: !errors.some(e => e.path.startsWith('/erpMetadata')),
+      errors: errors.filter(e => e.path.startsWith('/erpMetadata')),
+      warnings: [],
+      schemaVersion: contractValidator.getSchemaVersion(),
+    };
+  }
+  if (request.costBaseline) {
+    results.costBaseline = {
+      valid: !errors.some(e => e.path.startsWith('/costBaseline')),
+      errors: errors.filter(e => e.path.startsWith('/costBaseline')),
+      warnings: [],
+      schemaVersion: contractValidator.getSchemaVersion(),
+    };
   }
 
-  const allValid = totalErrors === 0;
-
-  return {
+  const response: ValidationResponse = {
     correlationId,
     timestamp: new Date().toISOString(),
     apiVersion: 'v1',
     status: allValid ? ValidationStatus.PASSED : ValidationStatus.FAILED,
     valid: allValid,
-    results: resultsBuilder,
+    results,
     summary: {
-      errorCount: totalErrors,
-      warningCount: totalWarnings,
+      errorCount: errors.length,
+      warningCount: 0,
       allValid,
       inputsValidated,
     },
+    ...(executionProof && { executionProof }),
   };
+
+  return response;
 }
 
 // ============================================================================
@@ -436,10 +448,12 @@ export async function handleValidateInput(
 
 /**
  * Handles the GET /api/v1/health endpoint.
+ * Includes contract schema information for service discovery.
  */
 export function handleHealthCheck(context: HandlerContext): HealthCheckResponse {
   const now = new Date();
   const uptimeMs = Date.now() - context.startTime;
+  const contractValidator = getContractValidator();
 
   return {
     status: 'healthy',
@@ -454,9 +468,13 @@ export function handleHealthCheck(context: HandlerContext): HealthCheckResponse 
       },
       validation: {
         status: 'healthy',
-        message: 'Validation service operational',
+        message: `Contract validation enabled - ${contractValidator.getSchemaId()}`,
         lastCheck: now.toISOString(),
       },
+    },
+    build: {
+      contractSchemaId: contractValidator.getSchemaId(),
+      contractSchemaVersion: contractValidator.getSchemaVersion(),
     },
   };
 }
@@ -479,230 +497,9 @@ export async function handleGetArtifact(
 // Helper Functions
 // ============================================================================
 
-/**
- * Validates all inputs and returns combined result.
- */
-function validateInputs(
-  simulation: SimulationOutput,
-  erpMetadata: ERPMetadata,
-  costBaseline: CostBaseline
-): { valid: boolean; errors: string[]; warnings: string[] } {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  // Validate simulation
-  const simResult = SimulationOutputSchema.safeParse(simulation);
-  if (!simResult.success) {
-    errors.push(`Simulation validation failed: ${simResult.error.message}`);
-  }
-
-  // Validate ERP metadata
-  const erpResult = ERPMetadataSchema.safeParse(erpMetadata);
-  if (!erpResult.success) {
-    errors.push(`ERP metadata validation failed: ${erpResult.error.message}`);
-  }
-
-  // Validate cost baseline
-  const costResult = CostBaselineSchema.safeParse(costBaseline);
-  if (!costResult.success) {
-    errors.push(`Cost baseline validation failed: ${costResult.error.message}`);
-  }
-
-  // Cross-validation warnings
-  if (simulation.scenario.baselineId !== costBaseline.baselineId) {
-    warnings.push(
-      `Simulation references baseline ${simulation.scenario.baselineId} ` +
-      `but loaded baseline is ${costBaseline.baselineId}`
-    );
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-  };
-}
-
-/**
- * Validates a simulation output.
- */
-function validateSimulation(simulation: SimulationOutput): InputValidationResult {
-  const result = SimulationOutputSchema.safeParse(simulation);
-  const errors: ValidationIssue[] = [];
-  const warnings: ValidationIssue[] = [];
-
-  if (!result.success) {
-    for (const issue of result.error.issues) {
-      errors.push({
-        path: issue.path.join('.'),
-        message: issue.message,
-        code: 'SCHEMA_ERROR',
-        severity: 'error',
-      });
-    }
-  }
-
-  // Additional validation checks
-  if (simulation.decisions.length === 0) {
-    warnings.push({
-      path: 'decisions',
-      message: 'No decisions provided in simulation output',
-      code: 'EMPTY_DECISIONS',
-      severity: 'warning',
-    });
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-    schemaVersion: '1.0.0',
-  };
-}
-
-/**
- * Validates ERP metadata.
- */
-function validateERPMetadata(erpMetadata: ERPMetadata): InputValidationResult {
-  const result = ERPMetadataSchema.safeParse(erpMetadata);
-  const errors: ValidationIssue[] = [];
-  const warnings: ValidationIssue[] = [];
-
-  if (!result.success) {
-    for (const issue of result.error.issues) {
-      errors.push({
-        path: issue.path.join('.'),
-        message: issue.message,
-        code: 'SCHEMA_ERROR',
-        severity: 'error',
-      });
-    }
-  }
-
-  // Additional checks
-  if (erpMetadata.costCenters.length === 0) {
-    warnings.push({
-      path: 'costCenters',
-      message: 'No cost centers defined in ERP metadata',
-      code: 'EMPTY_COST_CENTERS',
-      severity: 'warning',
-    });
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-    schemaVersion: '1.0.0',
-  };
-}
-
-/**
- * Validates cost baseline.
- */
-function validateCostBaseline(costBaseline: CostBaseline): InputValidationResult {
-  const result = CostBaselineSchema.safeParse(costBaseline);
-  const errors: ValidationIssue[] = [];
-  const warnings: ValidationIssue[] = [];
-
-  if (!result.success) {
-    for (const issue of result.error.issues) {
-      errors.push({
-        path: issue.path.join('.'),
-        message: issue.message,
-        code: 'SCHEMA_ERROR',
-        severity: 'error',
-      });
-    }
-  }
-
-  // Additional checks
-  if (costBaseline.discountRate <= 0 || costBaseline.discountRate > 1) {
-    warnings.push({
-      path: 'discountRate',
-      message: `Unusual discount rate: ${costBaseline.discountRate}`,
-      code: 'UNUSUAL_DISCOUNT_RATE',
-      severity: 'warning',
-    });
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-    schemaVersion: '1.0.0',
-  };
-}
-
-/**
- * Performs cross-validation between inputs.
- */
-function performCrossValidation(
-  simulation: SimulationOutput,
-  erpMetadata: ERPMetadata,
-  costBaseline: CostBaseline
-): CrossValidationResult {
-  const issues: CrossValidationIssue[] = [];
-
-  // Check baseline ID reference
-  if (simulation.scenario.baselineId !== costBaseline.baselineId) {
-    issues.push({
-      sourceInput: 'simulation',
-      targetInput: 'costBaseline',
-      message: `Simulation references baseline ${simulation.scenario.baselineId} but loaded baseline is ${costBaseline.baselineId}`,
-      code: 'BASELINE_ID_MISMATCH',
-    });
-  }
-
-  // Check currency consistency
-  const laborCurrencies = new Set(costBaseline.laborRates.map(r => r.currency));
-  if (!laborCurrencies.has(erpMetadata.reportingCurrency)) {
-    issues.push({
-      sourceInput: 'erpMetadata',
-      targetInput: 'costBaseline',
-      message: `ERP reporting currency ${erpMetadata.reportingCurrency} not in cost baseline labor rates`,
-      code: 'CURRENCY_MISMATCH',
-    });
-  }
-
-  // Validate cost center references
-  const erpCostCenterIds = new Set(erpMetadata.costCenters.map(cc => cc.costCenterId));
-  for (const overhead of costBaseline.overheadFactors) {
-    if (!erpCostCenterIds.has(overhead.costCenterId)) {
-      issues.push({
-        sourceInput: 'costBaseline',
-        targetInput: 'erpMetadata',
-        message: `Cost baseline overhead references unknown cost center ${overhead.costCenterId}`,
-        code: 'COST_CENTER_NOT_FOUND',
-      });
-    }
-  }
-
-  return {
-    valid: issues.length === 0,
-    issues,
-  };
-}
-
-/**
- * Gets a default fiscal period from ERP metadata.
- */
-function getDefaultFiscalPeriod(erpMetadata: ERPMetadata): FiscalPeriod {
-  const firstPeriod = erpMetadata.fiscalCalendar[0];
-  if (firstPeriod) {
-    return firstPeriod;
-  }
-
-  // Create a default if none exists
-  const now = new Date();
-  const year = now.getFullYear();
-  return {
-    year,
-    period: now.getMonth() + 1,
-    startDate: new Date(year, now.getMonth(), 1).toISOString(),
-    endDate: new Date(year, now.getMonth() + 1, 0).toISOString(),
-  };
-}
+// NOTE: Manual validation functions removed.
+// Contract validation is enforced at the request boundary (server.ts).
+// No fallback logic - requests must conform to the contract schema.
 
 /**
  * Extracts the financial artifact from a bundle.
@@ -717,13 +514,14 @@ function extractFinancialArtifact(bundle: ArtifactBundle): FinancialArtifact | u
 }
 
 /**
- * Creates an error response.
+ * Creates an error response with optional execution proof.
  */
 function createErrorResponse(
   correlationId: CorrelationId,
   code: APIErrorCode,
   message: string,
-  details: Record<string, unknown>
+  details: Record<string, unknown>,
+  executionProof?: ExecutionProof
 ): ROIEngineResponse {
   const error: APIError = {
     code,
@@ -737,5 +535,6 @@ function createErrorResponse(
     apiVersion: 'v1',
     status: ExecutionStatus.FAILED,
     error,
+    ...(executionProof && { executionProof }),
   };
 }

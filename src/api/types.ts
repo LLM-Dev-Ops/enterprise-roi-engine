@@ -13,6 +13,7 @@ import {
   ValidationStatus,
   FinancialArtifact,
   GovernancePayload,
+  ExecutionProof,
 } from '../contracts';
 
 // ============================================================================
@@ -205,6 +206,12 @@ export interface ROIEngineResponse extends APIResponse {
    * Warnings that occurred during processing.
    */
   readonly warnings?: readonly string[];
+
+  /**
+   * Execution proof demonstrating platform participation.
+   * Required for all responses to comply with contract enforcement.
+   */
+  readonly executionProof?: ExecutionProof;
 }
 
 /**
@@ -271,6 +278,11 @@ export interface ValidationResponse extends APIResponse {
    * Summary of validation issues.
    */
   readonly summary: ValidationSummary;
+
+  /**
+   * Execution proof demonstrating platform participation.
+   */
+  readonly executionProof?: ExecutionProof;
 }
 
 /**
@@ -426,6 +438,8 @@ export interface HealthCheckResponse {
   readonly build?: {
     readonly commitHash?: string;
     readonly buildTime?: string;
+    readonly contractSchemaId?: string;
+    readonly contractSchemaVersion?: string;
   };
 }
 
