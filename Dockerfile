@@ -19,14 +19,19 @@ COPY src/ ./src/
 # Build TypeScript
 RUN npm run build
 
+# Prune dev dependencies for production
+RUN npm prune --production
+
 # Production stage
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files and install production dependencies only
+# Copy package.json for reference
 COPY package*.json ./
-RUN npm ci --only=production
+
+# Copy node_modules from builder (already pruned to production)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
