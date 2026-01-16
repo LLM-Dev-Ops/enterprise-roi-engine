@@ -7,6 +7,11 @@ dist/
 # Claude Flow coordination data
 .claude-flow/
 
+# Claude Code local configuration
+.claude/
+.mcp.json
+CLAUDE.md
+
 # IDE
 .idea/
 .vscode/
