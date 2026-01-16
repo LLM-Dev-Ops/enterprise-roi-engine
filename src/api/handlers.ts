@@ -38,6 +38,11 @@ import {
 } from '../export/ExportOrchestrator';
 
 import {
+  createSynthesisResponseBuilder,
+  PhaseTimings,
+} from '../export/SynthesisResponseBuilder';
+
+import {
   ROIEngineRequest,
   ROIEngineResponse,
   ValidationRequest,
@@ -312,6 +317,36 @@ export async function handleCalculateROI(
       phaseBreakdown: phaseTimings,
     };
 
+    // Build executive synthesis-compatible output
+    let quantifyReference;
+    if (financialArtifact) {
+      const synthesisBuilder = createSynthesisResponseBuilder();
+      const synthesisTimings: PhaseTimings = {
+        ingestionMs: phaseTimings.ingestionMs,
+        normalizationMs: phaseTimings.normalizationMs,
+        attributionMs: phaseTimings.attributionMs,
+        calculationMs: phaseTimings.calculationMs,
+        exportMs: phaseTimings.exportMs,
+      };
+
+      // Determine report type from risk tolerance level
+      const reportType = mapRiskToleranceToReportType(
+        options.riskToleranceLevel ?? config.defaultRiskTolerance
+      );
+
+      quantifyReference = synthesisBuilder.build({
+        financialArtifact,
+        bundle: exportResult.bundle,
+        deltaResult,
+        phaseTimings: synthesisTimings,
+        reportType,
+        simulationId: request.simulation.metadata.simulationId,
+        traceId: correlationId,
+        startTime: new Date(startTime),
+        endTime: new Date(),
+      });
+    }
+
     // Finalize execution proof if provided
     let finalProof = executionProof;
     if (finalProof) {
@@ -330,6 +365,7 @@ export async function handleCalculateROI(
       artifactBundle: exportResult.bundle,
       metrics,
       ...(financialArtifact && { financialArtifact }),
+      ...(quantifyReference && { quantifyReference }),
       ...(finalProof && { executionProof: finalProof }),
     };
     return response;
@@ -500,6 +536,25 @@ export async function handleGetArtifact(
 // NOTE: Manual validation functions removed.
 // Contract validation is enforced at the request boundary (server.ts).
 // No fallback logic - requests must conform to the contract schema.
+
+/**
+ * Maps risk tolerance level to report type for synthesis.
+ * CFO-grade reports are generated for enterprise/high-risk scenarios.
+ */
+function mapRiskToleranceToReportType(
+  riskTolerance: 'LOW' | 'MODERATE' | 'HIGH'
+): 'cfo-grade' | 'executive-summary' | 'technical-deep-dive' {
+  switch (riskTolerance) {
+    case 'HIGH':
+      return 'cfo-grade';
+    case 'MODERATE':
+      return 'executive-summary';
+    case 'LOW':
+      return 'technical-deep-dive';
+    default:
+      return 'executive-summary';
+  }
+}
 
 /**
  * Extracts the financial artifact from a bundle.

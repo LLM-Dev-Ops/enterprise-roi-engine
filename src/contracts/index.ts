@@ -14,6 +14,9 @@ export * from './costops';
 // Output contracts
 export * from './artifacts';
 
+// Executive synthesis types
+export * from './synthesis';
+
 // Internal types
 export * from './internal';
 

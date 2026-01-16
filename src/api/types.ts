@@ -14,6 +14,7 @@ import {
   FinancialArtifact,
   GovernancePayload,
   ExecutionProof,
+  QuantifyReference,
 } from '../contracts';
 
 // ============================================================================
@@ -196,6 +197,13 @@ export interface ROIEngineResponse extends APIResponse {
    * Execution metrics.
    */
   readonly metrics?: ExecutionMetrics;
+
+  /**
+   * Executive synthesis-compatible output.
+   * Wraps ROI analysis in a format suitable for executive synthesis systems.
+   * Present when status is SUCCESS.
+   */
+  readonly quantifyReference?: QuantifyReference;
 
   /**
    * Error details if status is FAILED.
