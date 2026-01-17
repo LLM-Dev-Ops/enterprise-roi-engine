@@ -4,6 +4,9 @@
   "description": "Converts enterprise decision simulations into CFO-grade financial outcomes",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "agentics": "dist/cli/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "jest",

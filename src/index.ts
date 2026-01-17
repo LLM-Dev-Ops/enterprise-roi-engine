@@ -192,6 +192,32 @@ export * from './contracts';
 export * from './lib';
 
 // ============================================================================
+// Re-export synthesis utilities
+// ============================================================================
+
+export {
+  buildExecutiveSummary,
+  elevateRiskForProduction,
+  determineEnvironment,
+  calculateSuccessRate,
+  countBlockingIssues,
+  extractBlockingIssues,
+  isProductionTarget,
+} from './synthesis';
+
+export type {
+  SynthesisEnvironment,
+  SynthesisResultMetrics,
+  BlockingIssue,
+  DecisionPacket,
+  FlaggedAssumption,
+  QuantifyResult,
+  CostProjection,
+  ResourceProjection,
+  ComparisonResult,
+} from './synthesis';
+
+// ============================================================================
 // Import types needed for engine configuration
 // ============================================================================
 
