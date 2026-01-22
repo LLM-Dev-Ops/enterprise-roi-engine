@@ -22,3 +22,6 @@ export * from './internal';
 
 // Contract validation
 export * from './validation';
+
+// Agent contracts
+export * from './agent';

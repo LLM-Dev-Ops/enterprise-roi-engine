@@ -18,12 +18,24 @@ import {
   quantifyInspect,
 } from './commands/quantify';
 
+import {
+  strategyAnalyze,
+  strategyModel,
+  strategyInspect,
+} from './commands/strategy';
+
 import type {
   QuantifyCreateInput,
   QuantifyCompareInput,
   QuantifyListInput,
   QuantifyInspectInput,
 } from './types';
+
+import type {
+  StrategyAnalyzeInput,
+  StrategyModelInput,
+  StrategyInspectInput,
+} from './commands/strategy';
 
 // ============================================================================
 // CLI Argument Parsing
@@ -271,15 +283,100 @@ async function handleQuantifyInspect(options: Map<string, string | boolean>): Pr
 }
 
 // ============================================================================
+// Strategy Command Handlers
+// ============================================================================
+
+async function handleStrategyAnalyze(options: Map<string, string | boolean>): Promise<void> {
+  const inputFile = getStringOption(options, 'input', 'i', 'file');
+  const outputFile = getStringOption(options, 'output', 'o');
+  const format = getStringOption(options, 'format');
+
+  if (!inputFile) {
+    console.error('Error: --input is required');
+    process.exit(1);
+  }
+
+  // Build input conditionally to satisfy exactOptionalPropertyTypes
+  const input: StrategyAnalyzeInput = {
+    inputFile,
+    format: format === 'yaml' ? 'yaml' : 'json',
+    ...(outputFile && { outputFile }),
+  };
+
+  const result = await strategyAnalyze(input);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function handleStrategyModel(options: Map<string, string | boolean>): Promise<void> {
+  const scenarioId = getStringOption(options, 'scenario-id', 'scenario', 's');
+  const scenarioName = getStringOption(options, 'name', 'n');
+  const timeHorizonStr = getStringOption(options, 'time-horizon', 'horizon');
+  const discountRateStr = getStringOption(options, 'discount-rate', 'rate');
+  const inputFile = getStringOption(options, 'input', 'i');
+  const outputFile = getStringOption(options, 'output', 'o');
+
+  if (!scenarioId) {
+    console.error('Error: --scenario-id is required');
+    process.exit(1);
+  }
+
+  if (!scenarioName) {
+    console.error('Error: --name is required');
+    process.exit(1);
+  }
+
+  // Build input conditionally to satisfy exactOptionalPropertyTypes
+  const input: StrategyModelInput = {
+    scenarioId,
+    scenarioName,
+    ...(timeHorizonStr && { timeHorizon: parseInt(timeHorizonStr, 10) }),
+    ...(discountRateStr && { discountRate: parseFloat(discountRateStr) }),
+    ...(inputFile && { inputFile }),
+    ...(outputFile && { outputFile }),
+  };
+
+  const result = await strategyModel(input);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function handleStrategyInspect(options: Map<string, string | boolean>): Promise<void> {
+  const executionId = getStringOption(options, 'execution-id', 'id', 'e');
+  const includeInputs = getBoolOption(options, 'inputs');
+  const format = getStringOption(options, 'format');
+
+  if (!executionId) {
+    console.error('Error: --execution-id is required');
+    process.exit(1);
+  }
+
+  const input: StrategyInspectInput = {
+    executionId,
+    includeInputs,
+    format: format === 'yaml' ? 'yaml' : format === 'summary' ? 'summary' : 'json',
+  };
+
+  const result = await strategyInspect(input);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+// ============================================================================
 // Help Text
 // ============================================================================
 
 function showHelp(): void {
   console.log(`
-Agentics Quantify CLI
+Agentics CLI - Enterprise ROI Engine
 
 USAGE:
-  agentics quantify <subcommand> [options]
+  agentics <command> <subcommand> [options]
+
+COMMANDS:
+  quantify    Cost/resource projection commands
+  strategy    Enterprise ROI strategy analysis (Enterprise Strategy Agent)
+
+============================================================================
+QUANTIFY COMMANDS
+============================================================================
 
 SUBCOMMANDS:
   create      Create a new cost/resource projection (includes synthesis)
@@ -328,15 +425,53 @@ OPTIONS:
     --history         Include version history
     --assumptions     Include assumptions
 
-SYNTHESIS:
-  The 'create' and 'compare' commands include executive synthesis
-  Decision Packets containing:
-  - Confidence intervals for projection accuracy
-  - Data freshness timestamps
-  - Flagged assumptions and methodology disclosure
+============================================================================
+STRATEGY COMMANDS (Enterprise Strategy Agent)
+============================================================================
 
-  The 'list' and 'inspect' commands are read-only and do NOT
-  include synthesis.
+Classification: ENTERPRISE ROI STRATEGY
+Decision Type: enterprise_roi_strategy
+
+SUBCOMMANDS:
+  analyze     Perform strategy analysis on input signals (emits DecisionEvent)
+  model       Generate ROI model for a scenario (emits DecisionEvent)
+  inspect     Inspect details of a previous analysis (read-only)
+
+EXAMPLES:
+  # Analyze signals from file
+  agentics strategy analyze --input signals.json --output result.json
+
+  # Generate ROI model for a scenario
+  agentics strategy model --scenario-id scn-001 --name "Cloud Migration" --time-horizon 36
+
+  # Inspect previous analysis
+  agentics strategy inspect --execution-id abc123
+
+OPTIONS:
+  analyze:
+    --input, -i       Input file path (required, JSON with signals)
+    --output, -o      Output file path (optional)
+    --format          Input/output format (json)
+
+  model:
+    --scenario-id, -s Scenario ID (required)
+    --name, -n        Scenario name (required)
+    --time-horizon    Time horizon in months (default: 36)
+    --discount-rate   Discount rate (default: 0.08)
+    --input, -i       Optional input file with signals
+    --output, -o      Output file path
+
+  inspect:
+    --execution-id    Execution ID to inspect (required)
+    --inputs          Include input hash
+    --format          Output format (json|summary)
+
+AGENT BEHAVIOR:
+  The Enterprise Strategy Agent:
+  - Emits exactly ONE DecisionEvent per invocation
+  - Persists all data via ruvector-service
+  - Is deterministic: same inputs = same outputs
+  - Does NOT execute inference or modify upstream systems
 `);
 }
 
@@ -347,42 +482,60 @@ SYNTHESIS:
 async function main(): Promise<void> {
   const parsed = parseArgs(process.argv);
 
-  if (parsed.command !== 'quantify') {
-    if (getBoolOption(parsed.options, 'help', 'h')) {
-      showHelp();
-      return;
-    }
-    console.error('Unknown command. Use "agentics quantify <subcommand>" or --help');
-    process.exit(1);
-  }
-
   if (getBoolOption(parsed.options, 'help', 'h')) {
     showHelp();
     return;
   }
 
+  if (parsed.command !== 'quantify' && parsed.command !== 'strategy') {
+    console.error('Unknown command. Use "agentics <quantify|strategy> <subcommand>" or --help');
+    process.exit(1);
+  }
+
   try {
-    switch (parsed.subcommand) {
-      case 'create':
-        await handleQuantifyCreate(parsed.options);
-        break;
-      case 'compare':
-        await handleQuantifyCompare(parsed.options);
-        break;
-      case 'list':
-        await handleQuantifyList(parsed.options);
-        break;
-      case 'inspect':
-        await handleQuantifyInspect(parsed.options);
-        break;
-      default:
-        if (!parsed.subcommand) {
-          console.error('Error: subcommand required. Use "agentics quantify <create|compare|list|inspect>"');
-        } else {
-          console.error(`Unknown subcommand: ${parsed.subcommand}`);
-        }
-        showHelp();
-        process.exit(1);
+    if (parsed.command === 'quantify') {
+      switch (parsed.subcommand) {
+        case 'create':
+          await handleQuantifyCreate(parsed.options);
+          break;
+        case 'compare':
+          await handleQuantifyCompare(parsed.options);
+          break;
+        case 'list':
+          await handleQuantifyList(parsed.options);
+          break;
+        case 'inspect':
+          await handleQuantifyInspect(parsed.options);
+          break;
+        default:
+          if (!parsed.subcommand) {
+            console.error('Error: subcommand required. Use "agentics quantify <create|compare|list|inspect>"');
+          } else {
+            console.error(`Unknown subcommand: ${parsed.subcommand}`);
+          }
+          showHelp();
+          process.exit(1);
+      }
+    } else if (parsed.command === 'strategy') {
+      switch (parsed.subcommand) {
+        case 'analyze':
+          await handleStrategyAnalyze(parsed.options);
+          break;
+        case 'model':
+          await handleStrategyModel(parsed.options);
+          break;
+        case 'inspect':
+          await handleStrategyInspect(parsed.options);
+          break;
+        default:
+          if (!parsed.subcommand) {
+            console.error('Error: subcommand required. Use "agentics strategy <analyze|model|inspect>"');
+          } else {
+            console.error(`Unknown subcommand: ${parsed.subcommand}`);
+          }
+          showHelp();
+          process.exit(1);
+      }
     }
   } catch (error) {
     console.error('Error:', error instanceof Error ? error.message : error);
@@ -401,6 +554,9 @@ export {
   quantifyCompare,
   quantifyList,
   quantifyInspect,
+  strategyAnalyze,
+  strategyModel,
+  strategyInspect,
 };
 
 export type {
@@ -408,4 +564,7 @@ export type {
   QuantifyCompareInput,
   QuantifyListInput,
   QuantifyInspectInput,
+  StrategyAnalyzeInput,
+  StrategyModelInput,
+  StrategyInspectInput,
 };

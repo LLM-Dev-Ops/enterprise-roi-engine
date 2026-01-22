@@ -18,6 +18,13 @@ import {
 } from './contracts/validation';
 import { executeROIEngine, EngineConfig, ExecutionOptions } from './index';
 import { ExecutionStatus } from './contracts/common';
+import { createEnterpriseStrategyAgent } from './agents';
+import {
+  EnterpriseStrategyInput,
+  EnterpriseStrategyInputSchema,
+  ENTERPRISE_STRATEGY_AGENT_ID,
+  ENTERPRISE_STRATEGY_AGENT_VERSION,
+} from './contracts/agent';
 
 const PORT = parseInt(process.env['PORT'] || '8080', 10);
 const PLATFORM_VERSION = '1.0.0';
@@ -246,6 +253,96 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, 500, response);
     }
     return;
+  }
+
+  // ============================================================
+  // STRATEGY ENDPOINT - Enterprise Strategy Agent
+  // Per Agentics Constitution: emits exactly ONE DecisionEvent
+  // ============================================================
+  if (req.method === 'POST' && req.url === '/v1/strategy') {
+    let parsedBody: unknown;
+
+    try {
+      // Parse request body
+      const body = await parseBody(req);
+      try {
+        parsedBody = JSON.parse(body);
+      } catch {
+        const response = {
+          correlationId,
+          timestamp: new Date().toISOString(),
+          apiVersion: 'v1',
+          status: ExecutionStatus.FAILED,
+          error: {
+            code: 'INVALID_JSON',
+            message: 'Request body is not valid JSON',
+          },
+        };
+        sendJSON(res, 400, response);
+        return;
+      }
+
+      // Validate input against schema
+      const validationResult = EnterpriseStrategyInputSchema.safeParse(parsedBody);
+      if (!validationResult.success) {
+        const errors = validationResult.error.errors.map(e => ({
+          path: e.path.join('.'),
+          message: e.message,
+        }));
+        const response = {
+          correlationId,
+          timestamp: new Date().toISOString(),
+          apiVersion: 'v1',
+          status: ExecutionStatus.FAILED,
+          error: {
+            code: 'INPUT_VALIDATION_FAILED',
+            message: 'Request failed input validation',
+            details: { errors },
+          },
+        };
+        sendJSON(res, 400, response);
+        return;
+      }
+
+      // Execute Enterprise Strategy Agent
+      const agent = createEnterpriseStrategyAgent();
+      const decisionEvent = await agent.execute(parsedBody as EnterpriseStrategyInput);
+
+      const response = {
+        correlationId,
+        timestamp: new Date().toISOString(),
+        apiVersion: 'v1',
+        status: ExecutionStatus.SUCCESS,
+        agent: {
+          id: ENTERPRISE_STRATEGY_AGENT_ID,
+          version: ENTERPRISE_STRATEGY_AGENT_VERSION,
+        },
+        decisionEvent,
+      };
+
+      sendJSON(res, 200, response);
+      return;
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const code = (error as { code?: string }).code ?? 'AGENT_EXECUTION_FAILED';
+      const response = {
+        correlationId,
+        timestamp: new Date().toISOString(),
+        apiVersion: 'v1',
+        status: ExecutionStatus.FAILED,
+        agent: {
+          id: ENTERPRISE_STRATEGY_AGENT_ID,
+          version: ENTERPRISE_STRATEGY_AGENT_VERSION,
+        },
+        error: {
+          code,
+          message,
+        },
+      };
+      sendJSON(res, 500, response);
+      return;
+    }
   }
 
   // 404 for all other routes

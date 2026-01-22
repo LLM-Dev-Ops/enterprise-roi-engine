@@ -218,6 +218,24 @@ export type {
 } from './synthesis';
 
 // ============================================================================
+// Re-export agents
+// ============================================================================
+
+export {
+  EnterpriseStrategyAgent,
+  createEnterpriseStrategyAgent,
+  RuvectorClient,
+  createRuvectorClient,
+} from './agents';
+
+export type {
+  EnterpriseStrategyAgentConfig,
+  RuvectorClientConfig,
+  PersistenceResponse,
+  RetrievalResponse,
+} from './agents';
+
+// ============================================================================
 // Import types needed for engine configuration
 // ============================================================================
 

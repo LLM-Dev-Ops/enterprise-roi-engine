@@ -1,0 +1,72 @@
+# Cloud Run Service Configuration for enterprise-roi-engine
+# Service Topology: Unified service exposing all ROI/Strategy agent endpoints
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: enterprise-roi-engine
+  labels:
+    app: enterprise-roi-engine
+    tier: strategic-roi
+    platform: agentics
+  annotations:
+    run.googleapis.com/description: "Enterprise ROI Engine - Strategic ROI modeling and value realization"
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: enterprise-roi-engine-sa@${PROJECT_ID}.iam.gserviceaccount.com
+      containers:
+        - image: gcr.io/${PROJECT_ID}/enterprise-roi-engine:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: "1"
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "8080"
+            - name: PLATFORM_ENV
+              value: "${PLATFORM_ENV}"
+            - name: SERVICE_NAME
+              value: "enterprise-roi-engine"
+            - name: SERVICE_VERSION
+              value: "${SERVICE_VERSION}"
+            # ruvector-service integration (Secret Manager)
+            - name: RUVECTOR_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ruvector-service-url
+                  key: latest
+            - name: RUVECTOR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ruvector-api-key
+                  key: latest
+            # Telemetry endpoint
+            - name: TELEMETRY_ENDPOINT
+              value: "https://llm-observatory-1062287243982.us-central1.run.app"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
