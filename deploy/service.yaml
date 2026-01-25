@@ -1,5 +1,16 @@
 # Cloud Run Service Configuration for enterprise-roi-engine
 # Service Topology: Unified service exposing all ROI/Strategy agent endpoints
+#
+# PERFORMANCE BUDGETS (Per Strategic Hardening Requirements):
+# - MAX_TOKENS: 2500
+# - MAX_LATENCY_MS: 5000 (5 seconds)
+#
+# ROLE RULES:
+# - Agent MAY: Model ROI, Compare scenarios, Estimate risk-adjusted value
+# - Agent MUST NOT: Recommend final decisions, Trigger deployments
+#
+# DECISIONEVENT RULES:
+# - Emits: roi_estimate_signal, value_tradeoff_signal, economic_risk_signal
 
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -9,8 +20,9 @@ metadata:
     app: enterprise-roi-engine
     tier: strategic-roi
     platform: agentics
+    hardening-version: "2.0"
   annotations:
-    run.googleapis.com/description: "Enterprise ROI Engine - Strategic ROI modeling and value realization"
+    run.googleapis.com/description: "Enterprise ROI Engine - Strategic ROI modeling and value realization (HARDENED)"
     run.googleapis.com/ingress: all
 spec:
   template:
@@ -22,7 +34,8 @@ spec:
         run.googleapis.com/startup-cpu-boost: "true"
     spec:
       containerConcurrency: 80
-      timeoutSeconds: 300
+      # Timeout set to 30s - provides headroom above MAX_LATENCY_MS (5s) for startup/network
+      timeoutSeconds: 30
       serviceAccountName: enterprise-roi-engine-sa@${PROJECT_ID}.iam.gserviceaccount.com
       containers:
         - image: gcr.io/${PROJECT_ID}/enterprise-roi-engine:latest

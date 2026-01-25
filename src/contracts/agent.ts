@@ -278,14 +278,21 @@ export interface StrategicValueOutput {
 
 /**
  * Scenario comparison output.
+ *
+ * ROLE GUARDRAIL: This comparison INFORMS but does NOT recommend.
+ * The 'preferredScenario' field indicates which scenario has higher modeled value.
+ * The 'recommendation' field contains a finding statement, NOT a directive.
+ * Final investment decisions require executive review.
  */
 export interface ScenarioComparisonOutput {
   readonly baselineScenarioId: string;
   readonly comparisonScenarioId: string;
   readonly deltaNPV: MonetaryValue;
   readonly deltaROI: number;
+  /** Scenario with higher modeled value (informational, not a recommendation) */
   readonly preferredScenario: string;
   readonly confidenceDelta: number;
+  /** Finding statement (NOT a directive). Must end with "Investment decision requires executive review." */
   readonly recommendation: string;
 }
 
@@ -667,6 +674,73 @@ export function isValidDecisionEvent(data: unknown): data is DecisionEvent {
  *    - No direct SQL execution
  *    - All persistence via ruvector-service
  */
+
+// ============================================================================
+// Strategic Signal Types (Per DecisionEvent Rules)
+// ============================================================================
+
+/**
+ * Strategic signal types emitted by the Enterprise Strategy Agent.
+ *
+ * Per DecisionEvent rules, this agent emits:
+ * - roi_estimate_signal: ROI metrics with confidence bounds
+ * - value_tradeoff_signal: Investment vs benefit tradeoff metrics
+ * - economic_risk_signal: Risk-adjusted return and confidence intervals
+ */
+export const STRATEGIC_SIGNAL_TYPES = [
+  'roi_estimate_signal',
+  'value_tradeoff_signal',
+  'economic_risk_signal',
+] as const;
+
+export type StrategicSignalType = typeof STRATEGIC_SIGNAL_TYPES[number];
+
+/**
+ * ROI Estimate Signal payload.
+ */
+export interface ROIEstimateSignalPayload {
+  readonly scenario_id: string;
+  readonly gross_roi: number;
+  readonly net_roi: number;
+  readonly annualized_roi: number;
+  readonly roi_p10: number;
+  readonly roi_p50: number;
+  readonly roi_p90: number;
+  readonly confidence_level: ConfidenceLevel;
+  readonly confidence_score: number;
+}
+
+/**
+ * Value Tradeoff Signal payload.
+ */
+export interface ValueTradeoffSignalPayload {
+  readonly scenario_id: string;
+  readonly total_investment: MonetaryValue;
+  readonly total_benefit: MonetaryValue;
+  readonly net_benefit: MonetaryValue;
+  readonly npv: MonetaryValue;
+  readonly payback_period_months: number | null;
+  readonly profitability_index: number;
+}
+
+/**
+ * Economic Risk Signal payload.
+ */
+export interface EconomicRiskSignalPayload {
+  readonly scenario_id: string;
+  readonly risk_adjusted_return: MonetaryValue;
+  readonly confidence_interval: ConfidenceInterval;
+  readonly confidence_factors: readonly string[];
+  readonly constraints_applied: {
+    readonly assumptions: readonly string[];
+    readonly scope: readonly string[];
+    readonly scenario_bounds: {
+      readonly time_horizon_months: number;
+      readonly discount_rate: number;
+      readonly currency: string;
+    };
+  };
+}
 
 // ============================================================================
 // Failure Modes

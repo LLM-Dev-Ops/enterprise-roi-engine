@@ -63,6 +63,26 @@ export interface RetrievalResponse<T> {
   };
 }
 
+/**
+ * Strategic signal types per DecisionEvent rules.
+ * These signals are emitted by the Enterprise Strategy Agent.
+ */
+export type StrategicSignalType =
+  | 'roi_estimate_signal'
+  | 'value_tradeoff_signal'
+  | 'economic_risk_signal';
+
+/**
+ * Base strategic signal structure.
+ */
+export interface StrategicSignal {
+  readonly signal_type: StrategicSignalType;
+  readonly agent_id: string;
+  readonly execution_id: string;
+  readonly timestamp: string;
+  readonly payload: Record<string, unknown>;
+}
+
 // ============================================================================
 // ruvector-service Client
 // ============================================================================
@@ -110,6 +130,21 @@ export class RuvectorClient {
    */
   async persistTelemetryEvent(telemetryEvent: AgentTelemetryEvent): Promise<PersistenceResponse> {
     return this.sendPersistRequest('/api/v1/telemetry', telemetryEvent);
+  }
+
+  /**
+   * Persist a strategic signal to ruvector-service.
+   *
+   * Per DecisionEvent rules, the agent emits:
+   * - roi_estimate_signal
+   * - value_tradeoff_signal
+   * - economic_risk_signal
+   *
+   * @param signal The strategic signal to persist
+   * @returns PersistenceResponse with success status and persistence ID
+   */
+  async persistSignal(signal: StrategicSignal): Promise<PersistenceResponse> {
+    return this.sendPersistRequest('/api/v1/signals', signal);
   }
 
   /**

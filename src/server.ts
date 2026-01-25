@@ -25,9 +25,16 @@ import {
   ENTERPRISE_STRATEGY_AGENT_ID,
   ENTERPRISE_STRATEGY_AGENT_VERSION,
 } from './contracts/agent';
+import { MAX_LATENCY_MS } from './agents/EnterpriseStrategyAgent';
 
 const PORT = parseInt(process.env['PORT'] || '8080', 10);
 const PLATFORM_VERSION = '1.0.0';
+
+/**
+ * Performance budget enforcement at HTTP level.
+ * Ensures requests do not exceed MAX_LATENCY_MS.
+ */
+const STRATEGY_TIMEOUT_MS = MAX_LATENCY_MS;
 
 // Initialize contract validator singleton
 const contractValidator = getContractValidator({
@@ -258,9 +265,11 @@ const server = http.createServer(async (req, res) => {
   // ============================================================
   // STRATEGY ENDPOINT - Enterprise Strategy Agent
   // Per Agentics Constitution: emits exactly ONE DecisionEvent
+  // Per Performance Budgets: MAX_LATENCY_MS timeout enforcement
   // ============================================================
   if (req.method === 'POST' && req.url === '/v1/strategy') {
     let parsedBody: unknown;
+    const strategyStartTime = Date.now();
 
     try {
       // Parse request body
@@ -304,9 +313,22 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Execute Enterprise Strategy Agent
-      const agent = createEnterpriseStrategyAgent();
-      const decisionEvent = await agent.execute(parsedBody as EnterpriseStrategyInput);
+      // Execute Enterprise Strategy Agent with latency budget enforcement
+      const agent = createEnterpriseStrategyAgent({ maxLatencyMs: STRATEGY_TIMEOUT_MS });
+
+      // HTTP-level timeout as safety net
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Request exceeded MAX_LATENCY_MS budget of ${STRATEGY_TIMEOUT_MS}ms`));
+        }, STRATEGY_TIMEOUT_MS);
+      });
+
+      const decisionEvent = await Promise.race([
+        agent.execute(parsedBody as EnterpriseStrategyInput),
+        timeoutPromise,
+      ]);
+
+      const executionDurationMs = Date.now() - strategyStartTime;
 
       const response = {
         correlationId,
@@ -318,14 +340,21 @@ const server = http.createServer(async (req, res) => {
           version: ENTERPRISE_STRATEGY_AGENT_VERSION,
         },
         decisionEvent,
+        performance: {
+          executionDurationMs,
+          budgetMs: STRATEGY_TIMEOUT_MS,
+          withinBudget: executionDurationMs <= STRATEGY_TIMEOUT_MS,
+        },
       };
 
       sendJSON(res, 200, response);
       return;
 
     } catch (error) {
+      const executionDurationMs = Date.now() - strategyStartTime;
       const message = error instanceof Error ? error.message : 'Unknown error';
-      const code = (error as { code?: string }).code ?? 'AGENT_EXECUTION_FAILED';
+      const isTimeout = message.includes('MAX_LATENCY_MS') || message.includes('LATENCY_BUDGET_EXCEEDED');
+      const code = isTimeout ? 'LATENCY_BUDGET_EXCEEDED' : ((error as { code?: string }).code ?? 'AGENT_EXECUTION_FAILED');
       const response = {
         correlationId,
         timestamp: new Date().toISOString(),
@@ -339,8 +368,13 @@ const server = http.createServer(async (req, res) => {
           code,
           message,
         },
+        performance: {
+          executionDurationMs,
+          budgetMs: STRATEGY_TIMEOUT_MS,
+          withinBudget: false,
+        },
       };
-      sendJSON(res, 500, response);
+      sendJSON(res, isTimeout ? 504 : 500, response);
       return;
     }
   }

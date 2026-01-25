@@ -47,6 +47,43 @@ import { computeObjectHash } from '../lib';
 import { RuvectorClient, createRuvectorClient } from './ruvector-client';
 
 // ============================================================================
+// Performance Budgets (Per Strategic Hardening Requirements)
+// ============================================================================
+
+/**
+ * Maximum output token budget for responses.
+ * This agent produces structured JSON, not LLM tokens, but we constrain output size.
+ */
+export const MAX_TOKENS = 2500;
+
+/**
+ * Maximum latency in milliseconds for agent execution.
+ * Requests exceeding this budget will timeout with TIMEOUT failure mode.
+ */
+export const MAX_LATENCY_MS = 5000;
+
+// ============================================================================
+// Role Guardrails (Per Strategic Hardening Requirements)
+// ============================================================================
+
+/**
+ * ROLE RULES - HARDENED GUARDRAILS
+ *
+ * This agent informs executives. It does NOT approve investments.
+ *
+ * Agent MAY:
+ * - Model ROI
+ * - Compare scenarios
+ * - Estimate risk-adjusted value
+ *
+ * Agent MUST NOT:
+ * - Recommend final decisions
+ * - Trigger deployments
+ * - Approve or reject investments
+ * - Make binding recommendations
+ */
+
+// ============================================================================
 // Configuration
 // ============================================================================
 
@@ -64,6 +101,8 @@ export interface EnterpriseStrategyAgentConfig {
   readonly defaultDiscountRate?: number;
   /** Default base currency if not specified in input */
   readonly defaultBaseCurrency?: string;
+  /** Maximum latency in milliseconds (default: MAX_LATENCY_MS) */
+  readonly maxLatencyMs?: number;
 }
 
 const DEFAULT_CONFIG: Required<Omit<EnterpriseStrategyAgentConfig, 'ruvectorClient'>> = {
@@ -71,6 +110,7 @@ const DEFAULT_CONFIG: Required<Omit<EnterpriseStrategyAgentConfig, 'ruvectorClie
   defaultTimeHorizonMonths: 36,
   defaultDiscountRate: 0.08,
   defaultBaseCurrency: 'USD',
+  maxLatencyMs: MAX_LATENCY_MS,
 };
 
 // ============================================================================
@@ -118,6 +158,37 @@ export class EnterpriseStrategyAgent {
   }
 
   /**
+   * Enforce latency budget with timeout.
+   * @throws AgentError with TIMEOUT mode if execution exceeds MAX_LATENCY_MS
+   */
+  private enforceLatencyBudget<T>(
+    promise: Promise<T>,
+    startTime: number,
+    executionId: string
+  ): Promise<T> {
+    const timeoutMs = this.config.maxLatencyMs;
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, timeoutMs - elapsed);
+
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(
+            this.createError(
+              AgentFailureMode.TIMEOUT,
+              'LATENCY_BUDGET_EXCEEDED',
+              `Execution exceeded MAX_LATENCY_MS budget of ${timeoutMs}ms`,
+              false,
+              { executionId, elapsedMs: Date.now() - startTime, budgetMs: timeoutMs }
+            )
+          );
+        }, remaining);
+      }),
+    ]);
+  }
+
+  /**
    * Execute the Enterprise Strategy Agent.
    *
    * This is the main entry point for the agent. It:
@@ -134,37 +205,12 @@ export class EnterpriseStrategyAgent {
     const startTime = Date.now();
 
     try {
-      // Phase 1: Validate input
-      this.validateInput(input);
-
-      // Phase 2: Compute input hash for reproducibility
-      const inputsHash = this.computeInputHash(input);
-
-      // Phase 3: Perform analysis based on analysis type
-      const output = await this.performAnalysis(input, executionId);
-
-      // Phase 4: Calculate confidence
-      const confidence = this.calculateConfidence(input, output);
-
-      // Phase 5: Build DecisionEvent
-      const decisionEvent = this.buildDecisionEvent(
-        input,
-        output,
-        inputsHash,
-        confidence,
+      // Wrap entire execution in latency budget enforcement
+      return await this.enforceLatencyBudget(
+        this.executeWithinBudget(input, executionId, startTime),
+        startTime,
         executionId
       );
-
-      // Phase 6: Persist to ruvector-service
-      await this.persistDecisionEvent(decisionEvent);
-
-      // Phase 7: Emit telemetry
-      if (this.config.emitTelemetry) {
-        await this.emitTelemetry(executionId, startTime, input, output, 'success');
-      }
-
-      return decisionEvent;
-
     } catch (error) {
       // Emit failure telemetry
       if (this.config.emitTelemetry) {
@@ -172,6 +218,127 @@ export class EnterpriseStrategyAgent {
       }
 
       throw this.wrapError(error);
+    }
+  }
+
+  /**
+   * Internal execution wrapped by latency budget.
+   */
+  private async executeWithinBudget(
+    input: EnterpriseStrategyInput,
+    executionId: string,
+    startTime: number
+  ): Promise<DecisionEvent> {
+    // Phase 1: Validate input
+    this.validateInput(input);
+
+    // Phase 2: Compute input hash for reproducibility
+    const inputsHash = this.computeInputHash(input);
+
+    // Phase 3: Perform analysis based on analysis type
+    const output = await this.performAnalysis(input, executionId);
+
+    // Phase 4: Calculate confidence
+    const confidence = this.calculateConfidence(input, output);
+
+    // Phase 5: Build DecisionEvent
+    const decisionEvent = this.buildDecisionEvent(
+      input,
+      output,
+      inputsHash,
+      confidence,
+      executionId
+    );
+
+    // Phase 6: Emit strategic signals (per DecisionEvent rules)
+    await this.emitStrategicSignals(decisionEvent, executionId);
+
+    // Phase 7: Persist to ruvector-service
+    await this.persistDecisionEvent(decisionEvent);
+
+    // Phase 8: Emit telemetry
+    if (this.config.emitTelemetry) {
+      await this.emitTelemetry(executionId, startTime, input, output, 'success');
+    }
+
+    return decisionEvent;
+  }
+
+  /**
+   * Emit strategic signals per DecisionEvent rules.
+   * Signals emitted:
+   * - roi_estimate_signal
+   * - value_tradeoff_signal
+   * - economic_risk_signal
+   */
+  private async emitStrategicSignals(
+    decisionEvent: DecisionEvent,
+    executionId: string
+  ): Promise<void> {
+    const timestamp = new Date().toISOString();
+    const output = decisionEvent.outputs;
+
+    // Signal 1: ROI Estimate Signal
+    const roiEstimateSignal = {
+      signal_type: 'roi_estimate_signal' as const,
+      agent_id: ENTERPRISE_STRATEGY_AGENT_ID,
+      execution_id: executionId,
+      timestamp,
+      payload: {
+        scenario_id: output.scenarioId,
+        gross_roi: output.strategicValue.roiMetrics.grossROI,
+        net_roi: output.strategicValue.roiMetrics.netROI,
+        annualized_roi: output.strategicValue.roiMetrics.annualizedROI,
+        roi_p10: output.strategicValue.roiMetrics.roi_p10,
+        roi_p50: output.strategicValue.roiMetrics.roi_p50,
+        roi_p90: output.strategicValue.roiMetrics.roi_p90,
+        confidence_level: decisionEvent.confidence.level,
+        confidence_score: decisionEvent.confidence.score,
+      },
+    };
+
+    // Signal 2: Value Tradeoff Signal
+    const valueTradeoffSignal = {
+      signal_type: 'value_tradeoff_signal' as const,
+      agent_id: ENTERPRISE_STRATEGY_AGENT_ID,
+      execution_id: executionId,
+      timestamp,
+      payload: {
+        scenario_id: output.scenarioId,
+        total_investment: output.strategicValue.totalInvestment,
+        total_benefit: output.strategicValue.totalBenefit,
+        net_benefit: output.strategicValue.netBenefit,
+        npv: output.strategicValue.npvMetrics.npv,
+        payback_period_months: output.strategicValue.npvMetrics.paybackPeriodMonths,
+        profitability_index: output.strategicValue.npvMetrics.profitabilityIndex,
+      },
+    };
+
+    // Signal 3: Economic Risk Signal
+    const economicRiskSignal = {
+      signal_type: 'economic_risk_signal' as const,
+      agent_id: ENTERPRISE_STRATEGY_AGENT_ID,
+      execution_id: executionId,
+      timestamp,
+      payload: {
+        scenario_id: output.scenarioId,
+        risk_adjusted_return: output.strategicValue.riskAdjustedReturn,
+        confidence_interval: output.strategicValue.confidenceInterval,
+        confidence_factors: decisionEvent.confidence.factors,
+        constraints_applied: decisionEvent.constraints_applied,
+      },
+    };
+
+    // Persist signals to ruvector-service
+    try {
+      await Promise.all([
+        this.config.ruvectorClient.persistSignal(roiEstimateSignal),
+        this.config.ruvectorClient.persistSignal(valueTradeoffSignal),
+        this.config.ruvectorClient.persistSignal(economicRiskSignal),
+      ]);
+    } catch {
+      // Signal emission failure should not fail the main operation
+      console.warn('Failed to emit one or more strategic signals');
     }
   }
 
@@ -609,6 +776,10 @@ export class EnterpriseStrategyAgent {
 
   /**
    * Perform scenario comparison if a comparison scenario is specified.
+   *
+   * ROLE GUARDRAIL: This comparison INFORMS but does NOT recommend.
+   * We identify which scenario has higher modeled value but explicitly
+   * state that final decision requires executive review.
    */
   private performScenarioComparison(
     input: EnterpriseStrategyInput,
@@ -619,13 +790,15 @@ export class EnterpriseStrategyAgent {
     const deltaNPV = new Decimal(baselineValue.npvMetrics.npv.amount).times(0.1);
     const deltaROI = baselineValue.roiMetrics.netROI * 0.05;
 
-    const preferredScenario = deltaNPV.isPositive()
+    // Identify scenario with higher modeled value (informational, not a recommendation)
+    const higherValueScenario = deltaNPV.isPositive()
       ? input.scenarioId
       : (input.comparisonScenarioId ?? 'comparison');
 
-    const recommendation = deltaNPV.isPositive()
-      ? `Scenario ${input.scenarioId} is recommended with ${deltaNPV.toFixed(2)} higher NPV`
-      : `Scenario ${input.comparisonScenarioId} offers better value`;
+    // ROLE GUARDRAIL: Describe finding, do NOT recommend
+    const finding = deltaNPV.isPositive()
+      ? `Model indicates ${input.scenarioId} shows ${deltaNPV.abs().toFixed(2)} higher NPV than ${input.comparisonScenarioId}.`
+      : `Model indicates ${input.comparisonScenarioId} shows ${deltaNPV.abs().toFixed(2)} higher NPV than ${input.scenarioId}.`;
 
     return {
       baselineScenarioId: input.scenarioId,
@@ -636,9 +809,9 @@ export class EnterpriseStrategyAgent {
         new Date().toISOString()
       ),
       deltaROI,
-      preferredScenario,
+      preferredScenario: higherValueScenario, // Informational: higher modeled value
       confidenceDelta: 0.05,
-      recommendation,
+      recommendation: `${finding} Investment decision requires executive review.`,
     };
   }
 
@@ -673,6 +846,10 @@ export class EnterpriseStrategyAgent {
 
   /**
    * Generate executive summary.
+   *
+   * ROLE GUARDRAIL: This summary INFORMS executives but does NOT recommend
+   * final decisions. The agent MAY model ROI and compare scenarios but
+   * MUST NOT approve investments or make binding recommendations.
    */
   private generateExecutiveSummary(
     input: EnterpriseStrategyInput,
@@ -686,21 +863,28 @@ export class EnterpriseStrategyAgent {
     let summary = `${input.scenarioName}: `;
 
     if (netBenefit.isPositive()) {
-      summary += `Projected net benefit of ${strategicValue.netBenefit.currency} ${netBenefit.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} `;
+      summary += `Model projects net benefit of ${strategicValue.netBenefit.currency} ${netBenefit.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} `;
       summary += `over ${input.timeHorizonMonths} months. `;
-      summary += `ROI of ${(roi * 100).toFixed(1)}%`;
+      summary += `Estimated ROI: ${(roi * 100).toFixed(1)}%`;
       if (payback !== null) {
-        summary += ` with ${payback}-month payback period`;
+        summary += `, estimated payback: ${payback} months`;
       }
       summary += '.';
     } else {
-      summary += `Investment of ${strategicValue.totalInvestment.currency} ${strategicValue.totalInvestment.amount} `;
-      summary += `exceeds projected benefits. ROI of ${(roi * 100).toFixed(1)}%.`;
+      summary += `Model indicates investment of ${strategicValue.totalInvestment.currency} ${strategicValue.totalInvestment.amount} `;
+      summary += `exceeds projected benefits. Estimated ROI: ${(roi * 100).toFixed(1)}%.`;
     }
 
     if (scenarioComparison) {
-      summary += ` ${scenarioComparison.recommendation}`;
+      // ROLE GUARDRAIL: Describe comparison, do NOT recommend
+      const deltaNPV = new Decimal(scenarioComparison.deltaNPV.amount);
+      summary += ` Scenario comparison: ${scenarioComparison.baselineScenarioId} vs ${scenarioComparison.comparisonScenarioId}`;
+      summary += ` shows NPV delta of ${scenarioComparison.deltaNPV.currency} ${deltaNPV.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.`;
+      summary += ' Final investment decision requires executive review.';
     }
+
+    // Always append disclaimer per role rules
+    summary += ' [This analysis informs but does not approve investment decisions.]';
 
     return summary;
   }
