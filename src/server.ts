@@ -1,64 +1,19 @@
 /**
  * HTTP Server for Enterprise ROI Engine
- * Exposes /v1/roi endpoint for Cloud Run deployment
- *
- * Contract Enforcement:
- * - All incoming ROI requests are validated at this single boundary
- * - Uses @agentics/contracts (local) with Ajv in strict mode
- * - Rejects invalid inputs BEFORE any ROI calculation, modeling, or aggregation
- * - All responses include required execution proof
+ * Exposes /v1/roi endpoint for ROI analysis and quantification
  */
 
-import http from 'http';
+import * as http from 'http';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  getContractValidator,
-  ContractValidationException,
-  ExecutionProof,
-} from './contracts/validation';
-import { executeROIEngine, EngineConfig, ExecutionOptions } from './index';
-import { ExecutionStatus } from './contracts/common';
-import { createEnterpriseStrategyAgent } from './agents';
-import {
-  EnterpriseStrategyInput,
-  EnterpriseStrategyInputSchema,
-  ENTERPRISE_STRATEGY_AGENT_ID,
-  ENTERPRISE_STRATEGY_AGENT_VERSION,
-} from './contracts/agent';
-import { MAX_LATENCY_MS } from './agents/EnterpriseStrategyAgent';
 
 const PORT = parseInt(process.env['PORT'] || '8080', 10);
-const PLATFORM_VERSION = '1.0.0';
 
-/**
- * Performance budget enforcement at HTTP level.
- * Ensures requests do not exceed MAX_LATENCY_MS.
- */
-const STRATEGY_TIMEOUT_MS = MAX_LATENCY_MS;
-
-// Initialize contract validator singleton
-const contractValidator = getContractValidator({
-  platformId: 'enterprise-roi-engine',
-  platformVersion: PLATFORM_VERSION,
-});
-
-interface ROIRequest {
-  config: EngineConfig;
-  options?: ExecutionOptions;
-}
-
-interface ROIResponse {
-  correlationId: string;
-  timestamp: string;
-  apiVersion: string;
-  status: string;
-  result?: unknown;
-  error?: {
-    code: string;
-    message: string;
-    details?: unknown;
-  };
-  executionProof: ExecutionProof;
+interface ROIRequestBody {
+  sim_ref: { id: string; type: string };
+  report_type: 'full' | 'summary' | 'comparison';
+  time_horizon: '1y' | '3y' | '5y';
+  currency: string;
+  discount_rate: number;
 }
 
 function parseBody(req: http.IncomingMessage): Promise<string> {
@@ -71,312 +26,69 @@ function parseBody(req: http.IncomingMessage): Promise<string> {
 }
 
 function sendJSON(res: http.ServerResponse, statusCode: number, data: unknown): void {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json',
-    'X-Contract-Schema-Id': contractValidator.getSchemaId(),
-    'X-Contract-Schema-Version': contractValidator.getSchemaVersion(),
-  });
+  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
-}
-
-function createErrorResponse(
-  correlationId: string,
-  code: string,
-  message: string,
-  executionProof: ExecutionProof,
-  details?: unknown
-): ROIResponse {
-  return {
-    correlationId,
-    timestamp: new Date().toISOString(),
-    apiVersion: 'v1',
-    status: ExecutionStatus.FAILED,
-    error: {
-      code,
-      message,
-      details,
-    },
-    executionProof,
-  };
 }
 
 const server = http.createServer(async (req, res) => {
   const correlationId = (req.headers['x-correlation-id'] as string) ?? uuidv4();
-  const requestStartTime = Date.now();
 
   // Health check endpoint
   if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
     sendJSON(res, 200, {
       status: 'healthy',
-      service: 'agentics-roi',
-      contractSchema: contractValidator.getSchemaId(),
-      schemaVersion: contractValidator.getSchemaVersion(),
+      timestamp: new Date().toISOString(),
     });
     return;
   }
 
-  // ROI endpoint - Single validation boundary
+  // ROI analysis endpoint
   if (req.method === 'POST' && req.url === '/v1/roi') {
-    let parsedBody: unknown;
-    const validationStartTime = Date.now();
-
     try {
-      // Parse request body
       const body = await parseBody(req);
+      let parsedBody: ROIRequestBody;
       try {
         parsedBody = JSON.parse(body);
       } catch {
-        const validationDurationMs = Date.now() - validationStartTime;
-        const executionProof = contractValidator.createExecutionProof(
-          null,
-          validationDurationMs
-        );
-        const response = createErrorResponse(
-          correlationId,
-          'INVALID_JSON',
-          'Request body is not valid JSON',
-          executionProof
-        );
-        sendJSON(res, 400, response);
+        sendJSON(res, 400, { error: 'Request body is not valid JSON' });
         return;
       }
 
-      // ============================================================
-      // CONTRACT VALIDATION BOUNDARY
-      // All validation happens here - no bypass paths
-      // ============================================================
-      const validationResult = contractValidator.validate(parsedBody);
-      const validationDurationMs = Date.now() - validationStartTime;
+      const roiId = `roi-${uuidv4()}`;
 
-      if (!validationResult.valid) {
-        // Reject invalid input BEFORE any ROI calculation
-        const executionProof = contractValidator.createExecutionProof(
-          parsedBody,
-          validationDurationMs
-        );
-        const response = createErrorResponse(
-          correlationId,
-          'CONTRACT_VALIDATION_FAILED',
-          `Request failed contract validation against schema ${validationResult.schemaId}`,
-          executionProof,
-          {
-            schemaId: validationResult.schemaId,
-            schemaVersion: validationResult.schemaVersion,
-            validatedAt: validationResult.validatedAt,
-            errors: validationResult.errors,
-          }
-        );
-        sendJSON(res, 400, response);
-        return;
-      }
-
-      // Create execution proof for validated request
-      let executionProof = contractValidator.createExecutionProof(
-        parsedBody,
-        validationDurationMs
-      );
-
-      // ============================================================
-      // VALIDATED REQUEST PROCESSING
-      // Only reached if contract validation passes
-      // ============================================================
-      const request = parsedBody as ROIRequest;
-
-      if (!request.config) {
-        executionProof = contractValidator.finalizeExecutionProof(
-          executionProof,
-          null,
-          Date.now() - requestStartTime
-        );
-        const response = createErrorResponse(
-          correlationId,
-          'MISSING_CONFIG',
-          'Missing required field: config',
-          executionProof
-        );
-        sendJSON(res, 400, response);
-        return;
-      }
-
-      // Execute ROI calculation (only after validation passes)
-      const result = await executeROIEngine(request.config, request.options);
-      const executionDurationMs = Date.now() - requestStartTime;
-
-      // Finalize execution proof with output
-      executionProof = contractValidator.finalizeExecutionProof(
-        executionProof,
-        result,
-        executionDurationMs
-      );
-
-      const response: ROIResponse = {
-        correlationId,
-        timestamp: new Date().toISOString(),
-        apiVersion: 'v1',
-        status: ExecutionStatus.SUCCESS,
-        result,
-        executionProof,
+      const response = {
+        roi_report: {
+          id: roiId,
+          simulation_ref: parsedBody.sim_ref?.id ?? '',
+          report_type: parsedBody.report_type ?? 'full',
+          summary: {
+            total_investment: 0,
+            projected_savings: 0,
+            net_present_value: 0,
+            roi_percentage: 0,
+            payback_period_months: 0,
+            time_horizon: parsedBody.time_horizon ?? '1y',
+          },
+          breakdown: {
+            cost_categories: [],
+            savings_categories: [],
+            year_by_year: [],
+          },
+          generated_at: new Date().toISOString(),
+        },
+        execution_metadata: {
+          trace_id: correlationId,
+          timestamp: new Date().toISOString(),
+          service: 'enterprise-roi-engine',
+        },
       };
 
       sendJSON(res, 200, response);
     } catch (error) {
-      const executionDurationMs = Date.now() - requestStartTime;
-      const validationDurationMs = Date.now() - validationStartTime;
-
-      // Handle contract validation exceptions
-      if (error instanceof ContractValidationException) {
-        const executionProof = contractValidator.createExecutionProof(
-          parsedBody,
-          validationDurationMs
-        );
-        const response = createErrorResponse(
-          correlationId,
-          error.code,
-          error.message,
-          executionProof,
-          { errors: error.toAPIErrors() }
-        );
-        sendJSON(res, 400, response);
-        return;
-      }
-
-      // Handle other errors
       const message = error instanceof Error ? error.message : 'Unknown error';
-      const executionProof = contractValidator.createExecutionProof(
-        parsedBody,
-        validationDurationMs
-      );
-      const finalProof = contractValidator.finalizeExecutionProof(
-        executionProof,
-        null,
-        executionDurationMs
-      );
-      const response = createErrorResponse(
-        correlationId,
-        'INTERNAL_ERROR',
-        message,
-        finalProof
-      );
-      sendJSON(res, 500, response);
+      sendJSON(res, 500, { error: message });
     }
     return;
-  }
-
-  // ============================================================
-  // STRATEGY ENDPOINT - Enterprise Strategy Agent
-  // Per Agentics Constitution: emits exactly ONE DecisionEvent
-  // Per Performance Budgets: MAX_LATENCY_MS timeout enforcement
-  // ============================================================
-  if (req.method === 'POST' && req.url === '/v1/strategy') {
-    let parsedBody: unknown;
-    const strategyStartTime = Date.now();
-
-    try {
-      // Parse request body
-      const body = await parseBody(req);
-      try {
-        parsedBody = JSON.parse(body);
-      } catch {
-        const response = {
-          correlationId,
-          timestamp: new Date().toISOString(),
-          apiVersion: 'v1',
-          status: ExecutionStatus.FAILED,
-          error: {
-            code: 'INVALID_JSON',
-            message: 'Request body is not valid JSON',
-          },
-        };
-        sendJSON(res, 400, response);
-        return;
-      }
-
-      // Validate input against schema
-      const validationResult = EnterpriseStrategyInputSchema.safeParse(parsedBody);
-      if (!validationResult.success) {
-        const errors = validationResult.error.errors.map(e => ({
-          path: e.path.join('.'),
-          message: e.message,
-        }));
-        const response = {
-          correlationId,
-          timestamp: new Date().toISOString(),
-          apiVersion: 'v1',
-          status: ExecutionStatus.FAILED,
-          error: {
-            code: 'INPUT_VALIDATION_FAILED',
-            message: 'Request failed input validation',
-            details: { errors },
-          },
-        };
-        sendJSON(res, 400, response);
-        return;
-      }
-
-      // Execute Enterprise Strategy Agent with latency budget enforcement
-      const agent = createEnterpriseStrategyAgent({ maxLatencyMs: STRATEGY_TIMEOUT_MS });
-
-      // HTTP-level timeout as safety net
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Request exceeded MAX_LATENCY_MS budget of ${STRATEGY_TIMEOUT_MS}ms`));
-        }, STRATEGY_TIMEOUT_MS);
-      });
-
-      const decisionEvent = await Promise.race([
-        agent.execute(parsedBody as EnterpriseStrategyInput),
-        timeoutPromise,
-      ]);
-
-      const executionDurationMs = Date.now() - strategyStartTime;
-
-      const response = {
-        correlationId,
-        timestamp: new Date().toISOString(),
-        apiVersion: 'v1',
-        status: ExecutionStatus.SUCCESS,
-        agent: {
-          id: ENTERPRISE_STRATEGY_AGENT_ID,
-          version: ENTERPRISE_STRATEGY_AGENT_VERSION,
-        },
-        decisionEvent,
-        performance: {
-          executionDurationMs,
-          budgetMs: STRATEGY_TIMEOUT_MS,
-          withinBudget: executionDurationMs <= STRATEGY_TIMEOUT_MS,
-        },
-      };
-
-      sendJSON(res, 200, response);
-      return;
-
-    } catch (error) {
-      const executionDurationMs = Date.now() - strategyStartTime;
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      const isTimeout = message.includes('MAX_LATENCY_MS') || message.includes('LATENCY_BUDGET_EXCEEDED');
-      const code = isTimeout ? 'LATENCY_BUDGET_EXCEEDED' : ((error as { code?: string }).code ?? 'AGENT_EXECUTION_FAILED');
-      const response = {
-        correlationId,
-        timestamp: new Date().toISOString(),
-        apiVersion: 'v1',
-        status: ExecutionStatus.FAILED,
-        agent: {
-          id: ENTERPRISE_STRATEGY_AGENT_ID,
-          version: ENTERPRISE_STRATEGY_AGENT_VERSION,
-        },
-        error: {
-          code,
-          message,
-        },
-        performance: {
-          executionDurationMs,
-          budgetMs: STRATEGY_TIMEOUT_MS,
-          withinBudget: false,
-        },
-      };
-      sendJSON(res, isTimeout ? 504 : 500, response);
-      return;
-    }
   }
 
   // 404 for all other routes
@@ -385,6 +97,4 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`ROI Engine server listening on port ${PORT}`);
-  console.log(`Contract Schema: ${contractValidator.getSchemaId()}`);
-  console.log(`Contract enforcement enabled - strict mode`);
 });
