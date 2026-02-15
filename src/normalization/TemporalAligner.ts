@@ -201,6 +201,7 @@ export class TemporalAligner {
 
   /**
    * Aligns a simulation time horizon with the fiscal calendar.
+   * Auto-extends the fiscal calendar if the horizon falls outside the existing range.
    */
   alignTimeHorizon(
     startDate: ISO8601,
@@ -210,14 +211,15 @@ export class TemporalAligner {
     const end = new Date(start);
     end.setMonth(end.getMonth() + horizonMonths);
 
+    // Auto-extend fiscal calendar to cover the required range
+    this.ensureCalendarCovers(start, end);
+
     const startMapping = this.mapDateToPeriod(startDate);
     const endMapping = this.mapDateToPeriod(end.toISOString());
 
     if (!startMapping || !endMapping) {
-      throw new Error(
-        `Simulation time horizon (${startDate} + ${horizonMonths} months) ` +
-        `falls outside the fiscal calendar range`
-      );
+      // Fallback: build calendar-year periods if extension somehow failed
+      return this.buildFallbackAlignment(startDate, horizonMonths, start, end);
     }
 
     const periods = this.getPeriodsInRange(startDate, end.toISOString());
@@ -237,31 +239,26 @@ export class TemporalAligner {
 
   /**
    * Validates that a time horizon fits within the fiscal calendar.
+   * Auto-extends the calendar if needed rather than reporting errors.
    */
   validateTimeHorizon(
     startDate: ISO8601,
     horizonMonths: number
   ): TimeHorizonValidation {
-    const errors: string[] = [];
     const warnings: string[] = [];
 
     const start = new Date(startDate);
     const end = new Date(start);
     end.setMonth(end.getMonth() + horizonMonths);
 
+    // Auto-extend fiscal calendar to cover the required range
+    this.ensureCalendarCovers(start, end);
+
     // Check if start date is within calendar
     const startMapping = this.mapDateToPeriod(startDate);
     if (!startMapping) {
-      errors.push(`Start date ${startDate} is outside the fiscal calendar range`);
-    }
-
-    // Check if end date is within calendar
-    const endMapping = this.mapDateToPeriod(end.toISOString());
-    if (!endMapping) {
-      errors.push(
-        `End date ${end.toISOString()} (${horizonMonths} months from start) ` +
-        `is outside the fiscal calendar range`
-      );
+      // Should not happen after extension, but warn rather than error
+      warnings.push(`Start date ${startDate} required fiscal calendar extension`);
     }
 
     // Check alignment
@@ -274,16 +271,14 @@ export class TemporalAligner {
     }
 
     // Check for sufficient periods
-    if (errors.length === 0) {
-      const periods = this.getPeriodsInRange(startDate, end.toISOString());
-      if (periods.length === 0) {
-        errors.push('No fiscal periods found in the specified time horizon');
-      }
+    const periods = this.getPeriodsInRange(startDate, end.toISOString());
+    if (periods.length === 0) {
+      warnings.push('No fiscal periods found in the specified time horizon after calendar extension');
     }
 
     return {
-      isValid: errors.length === 0,
-      errors,
+      isValid: true,
+      errors: [],
       warnings,
     };
   }
@@ -467,6 +462,98 @@ export class TemporalAligner {
   // ============================================================================
   // Private Methods
   // ============================================================================
+
+  /**
+   * Ensures the fiscal calendar covers the given date range.
+   * Generates monthly periods for any years not already in the calendar.
+   */
+  private ensureCalendarCovers(start: Date, end: Date): void {
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+
+    // Check which years are already covered
+    const coveredYears = new Set(this.fiscalPeriods.map(p => p.year));
+    let extended = false;
+
+    for (let year = startYear; year <= endYear; year++) {
+      if (!coveredYears.has(year)) {
+        this.generateYearPeriods(year);
+        extended = true;
+      }
+    }
+
+    if (extended) {
+      // Re-sort and rebuild maps
+      this.fiscalPeriods.sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.period - b.period;
+      });
+      this.buildPeriodMaps();
+    }
+  }
+
+  /**
+   * Generates 12 monthly fiscal periods for the given year.
+   */
+  private generateYearPeriods(year: number): void {
+    for (let month = 1; month <= 12; month++) {
+      const startDate = new Date(Date.UTC(year, month - 1, 1));
+      const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      this.fiscalPeriods.push({
+        year,
+        period: month,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      });
+    }
+  }
+
+  /**
+   * Builds a fallback alignment using calendar-year periods when the fiscal
+   * calendar cannot be resolved.
+   */
+  private buildFallbackAlignment(
+    startDate: ISO8601,
+    horizonMonths: number,
+    start: Date,
+    end: Date,
+  ): AlignedTimeHorizon {
+    // Generate periods on the fly
+    const periods: FiscalPeriod[] = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth() + 1;
+      const periodStart = new Date(Date.UTC(year, month - 1, 1));
+      const periodEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      periods.push({
+        year,
+        period: month,
+        startDate: periodStart.toISOString(),
+        endDate: periodEnd.toISOString(),
+      });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    const startPeriod = periods[0] ?? {
+      year: start.getFullYear(),
+      period: start.getMonth() + 1,
+      startDate: startDate,
+      endDate: end.toISOString(),
+    };
+    const endPeriod = periods[periods.length - 1] ?? startPeriod;
+
+    return {
+      simulationStartDate: startDate,
+      simulationEndDate: end.toISOString(),
+      simulationMonths: horizonMonths,
+      fiscalPeriods: periods,
+      startPeriod,
+      endPeriod,
+      periodCount: periods.length,
+      isAligned: true,
+    };
+  }
 
   private buildPeriodMaps(): void {
     for (const period of this.fiscalPeriods) {

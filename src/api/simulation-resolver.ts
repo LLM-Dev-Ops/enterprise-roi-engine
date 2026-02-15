@@ -12,7 +12,8 @@ import type { SimulationOutput } from '../contracts/simulation';
 import type { ERPMetadata } from '../contracts/erp';
 import { EntityType } from '../contracts/erp';
 import type { CostBaseline } from '../contracts/costops';
-import { AccountType, NaturalSign } from '../contracts/common';
+import { AccountType, NaturalSign, ResourceType, DeltaDirection } from '../contracts/common';
+import type { DecisionNode, ResourceDelta } from '../contracts/simulation';
 import type { LightweightROIRequest } from './types';
 
 const RUVECTOR_SERVICE_BASE = 'https://ruvvector-service-1062287243982.us-central1.run.app';
@@ -55,7 +56,10 @@ export async function resolveSimulationData(
     ? resolveInlineSimulation(request.simulation_data, simulationId)
     : await fetchSimulation(simulationId);
 
-  const erpMetadata = generateDefaultERPMetadata(currency);
+  // Generate fiscal calendar covering the simulation's time horizon
+  const simHorizon = simulation.scenario.timeHorizonMonths;
+  const calendarYears = Math.ceil(Math.max(simHorizon, timeHorizonMonths) / 12) + 1;
+  const erpMetadata = generateDefaultERPMetadata(currency, calendarYears);
   const costBaseline = generateDefaultCostBaseline(
     simulation.scenario.baselineId,
     currency,
@@ -67,20 +71,264 @@ export async function resolveSimulationData(
 
 /**
  * Resolves inline simulation data into a SimulationOutput.
- * Uses the data directly if it already matches the expected shape,
- * otherwise normalizes it (same logic as the ruvector fetch path).
+ * Handles three formats:
+ * 1. Already a valid SimulationOutput → use directly
+ * 2. CLI simulation record (metadata.synthesis_data.financial_model) → extract and synthesize
+ * 3. Other upstream format → normalize with defaults
  */
 function resolveInlineSimulation(data: Record<string, unknown>, simulationId: string): SimulationOutput {
   // The inline payload may wrap the simulation in a data envelope
   const unwrapped = ('data' in data && typeof data['data'] === 'object' && data['data'] !== null)
-    ? data['data']
+    ? data['data'] as Record<string, unknown>
     : data;
 
   if (isSimulationOutput(unwrapped)) {
-    return unwrapped as SimulationOutput;
+    return unwrapped as unknown as SimulationOutput;
+  }
+
+  // Check for CLI simulation record format: metadata.synthesis_data.financial_model
+  const cliSimulation = buildSimulationFromCLIRecord(unwrapped as Record<string, unknown>, simulationId);
+  if (cliSimulation) {
+    return cliSimulation;
   }
 
   return normalizeUpstreamSimulation(unwrapped, simulationId);
+}
+
+/**
+ * Attempts to build a SimulationOutput from a CLI simulation record.
+ * The CLI stores simulations locally with financial data nested at
+ * metadata.synthesis_data.financial_model. Returns null if the data
+ * is not in CLI record format.
+ */
+function buildSimulationFromCLIRecord(
+  data: Record<string, unknown>,
+  simulationId: string
+): SimulationOutput | null {
+  const metadata = data['metadata'] as Record<string, unknown> | undefined;
+  if (!metadata || typeof metadata !== 'object') return null;
+
+  const synthesisData = metadata['synthesis_data'] as Record<string, unknown> | undefined;
+  if (!synthesisData || typeof synthesisData !== 'object') return null;
+
+  const financialModel = synthesisData['financial_model'] as Record<string, unknown> | undefined;
+  if (!financialModel || typeof financialModel !== 'object') return null;
+
+  // We have a CLI simulation record with financial data — extract it
+  const scenario = synthesisData['scenario'] as Record<string, unknown> | undefined;
+  const phases = synthesisData['phases'] as unknown[] | undefined;
+  const routing = synthesisData['routing'] as Record<string, unknown> | undefined;
+
+  const now = new Date().toISOString();
+  const checksum = createHash('sha256').update(JSON.stringify(data)).digest('hex');
+  const scenarioName = (typeof data['name'] === 'string' ? data['name'] : null)
+    ?? (scenario && typeof scenario['name'] === 'string' ? scenario['name'] : `Simulation ${simulationId}`);
+  const category = routing && typeof routing['category'] === 'string'
+    ? routing['category'] : 'general';
+
+  // Build decisions from cost_breakdown (investment) and savings_breakdown (savings)
+  const decisions: DecisionNode[] = [];
+  const resourceDeltas: ResourceDelta[] = [];
+
+  const costBreakdown = financialModel['cost_breakdown'] as Record<string, number> | undefined;
+  const savingsBreakdown = financialModel['savings_breakdown'] as Record<string, number> | undefined;
+  const yearByYear = financialModel['year_by_year'] as Array<Record<string, number>> | undefined;
+
+  const totalInvestment = typeof financialModel['total_investment'] === 'number'
+    ? financialModel['total_investment'] : 0;
+  const roiMonths = typeof financialModel['roi_months'] === 'number'
+    ? financialModel['roi_months'] : 12;
+
+  // Create decisions from cost breakdown items (investment costs)
+  if (costBreakdown && typeof costBreakdown === 'object') {
+    for (const [costType, amount] of Object.entries(costBreakdown)) {
+      if (typeof amount !== 'number') continue;
+      const nodeId = uuidv4();
+      const label = costType.replace(/_/g, ' ');
+
+      decisions.push({
+        nodeId,
+        parentId: null,
+        decision: `${category} investment: ${label}`,
+        probability: routing && typeof routing['confidence'] === 'number'
+          ? routing['confidence'] : 0.85,
+        outcomeMetrics: {
+          investment_amount: amount,
+          category_weight: totalInvestment > 0 ? amount / totalInvestment : 0,
+        },
+      });
+
+      // Distribute cost across periods (year_by_year or evenly across roiMonths)
+      const periods = yearByYear ? yearByYear.length * 12 : Math.max(roiMonths, 12);
+      const perPeriodAmount = amount / periods;
+      for (let p = 0; p < periods; p++) {
+        resourceDeltas.push({
+          period: p,
+          resourceType: costType === 'talent' ? ResourceType.FTE
+            : costType === 'licensing' ? ResourceType.LICENSE
+            : costType === 'infrastructure' ? ResourceType.COMPUTE
+            : ResourceType.CUSTOM,
+          quantity: perPeriodAmount,
+          unit: 'currency',
+          direction: DeltaDirection.INCREASE,
+        });
+      }
+    }
+  }
+
+  // Create decisions from savings breakdown items
+  if (savingsBreakdown && typeof savingsBreakdown === 'object') {
+    for (const [savingsType, amount] of Object.entries(savingsBreakdown)) {
+      if (typeof amount !== 'number') continue;
+      const nodeId = uuidv4();
+      const label = savingsType.replace(/_/g, ' ');
+
+      decisions.push({
+        nodeId,
+        parentId: null,
+        decision: `${category} savings: ${label}`,
+        probability: routing && typeof routing['confidence'] === 'number'
+          ? routing['confidence'] : 0.85,
+        outcomeMetrics: {
+          savings_amount: amount,
+          annual_savings: amount,
+        },
+      });
+
+      const periods = yearByYear ? yearByYear.length * 12 : Math.max(roiMonths, 12);
+      const perPeriodAmount = amount / periods;
+      for (let p = 0; p < periods; p++) {
+        resourceDeltas.push({
+          period: p,
+          resourceType: savingsType.includes('labor') ? ResourceType.FTE
+            : savingsType.includes('infrastructure') ? ResourceType.COMPUTE
+            : ResourceType.CUSTOM,
+          quantity: perPeriodAmount,
+          unit: 'currency',
+          direction: DeltaDirection.DECREASE,
+        });
+      }
+    }
+  }
+
+  // If we didn't extract any decisions, create a single aggregate decision
+  if (decisions.length === 0) {
+    const totalSavings = savingsBreakdown
+      ? Object.values(savingsBreakdown).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0)
+      : 0;
+
+    decisions.push({
+      nodeId: uuidv4(),
+      parentId: null,
+      decision: `${category} initiative: ${scenarioName}`,
+      probability: routing && typeof routing['confidence'] === 'number'
+        ? routing['confidence'] : 0.85,
+      outcomeMetrics: {
+        total_investment: totalInvestment,
+        total_savings: totalSavings,
+        roi_months: roiMonths,
+      },
+    });
+
+    // Add aggregate resource deltas
+    if (totalInvestment > 0) {
+      resourceDeltas.push({
+        period: 0,
+        resourceType: ResourceType.CUSTOM,
+        quantity: totalInvestment,
+        unit: 'currency',
+        direction: DeltaDirection.INCREASE,
+      });
+    }
+    if (totalSavings > 0) {
+      resourceDeltas.push({
+        period: 0,
+        resourceType: ResourceType.CUSTOM,
+        quantity: totalSavings,
+        unit: 'currency',
+        direction: DeltaDirection.DECREASE,
+      });
+    }
+  }
+
+  // Determine time horizon from year_by_year or roi_months
+  const timeHorizonMonths = yearByYear ? yearByYear.length * 12 : Math.max(roiMonths, 12);
+
+  // Build confidence intervals from financial model
+  const npv5yr = typeof financialModel['npv_5yr'] === 'number' ? financialModel['npv_5yr'] : 0;
+  const totalSavings = savingsBreakdown
+    ? Object.values(savingsBreakdown).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0)
+    : 0;
+
+  return {
+    metadata: {
+      simulationId: typeof data['id'] === 'string' ? data['id'] : simulationId,
+      engineVersion: '1.0.0-cli',
+      timestamp: typeof data['created_at'] === 'string' ? data['created_at'] : now,
+      checksum,
+    },
+    scenario: {
+      name: scenarioName,
+      baselineId: uuidv4(),
+      timeHorizonMonths,
+      confidenceLevel: routing && typeof routing['confidence'] === 'number'
+        ? routing['confidence'] : 0.9,
+    },
+    decisions,
+    resourceDeltas,
+    workflowTraces: buildWorkflowTracesFromPhases(phases),
+    confidenceIntervals: [{
+      metricName: 'net_savings',
+      p10: totalSavings * 0.6,
+      p25: totalSavings * 0.75,
+      p50: totalSavings * 0.9,
+      p75: totalSavings * 1.0,
+      p90: totalSavings * 1.1,
+    }, {
+      metricName: 'npv',
+      p10: npv5yr * 0.7,
+      p25: npv5yr * 0.8,
+      p50: npv5yr * 0.9,
+      p75: npv5yr * 1.0,
+      p90: npv5yr * 1.1,
+    }],
+  };
+}
+
+/**
+ * Builds workflow traces from CLI synthesis phases.
+ */
+function buildWorkflowTracesFromPhases(
+  phases: unknown[] | undefined
+): SimulationOutput['workflowTraces'] {
+  if (!phases || !Array.isArray(phases) || phases.length === 0) {
+    return [{
+      traceId: uuidv4(),
+      workflowName: 'cli-synthesis',
+      steps: [{
+        stepId: uuidv4(),
+        stepName: 'cli-synthesis',
+        duration: 0,
+        resourcesConsumed: {},
+      }],
+      totalDuration: 0,
+    }];
+  }
+
+  return [{
+    traceId: uuidv4(),
+    workflowName: 'cli-synthesis',
+    steps: phases.map((phase, index) => {
+      const p = phase as Record<string, unknown>;
+      return {
+        stepId: uuidv4(),
+        stepName: typeof p['name'] === 'string' ? p['name'] : `phase-${index + 1}`,
+        duration: 0,
+        resourcesConsumed: {},
+      };
+    }),
+    totalDuration: 0,
+  }];
 }
 
 /**
@@ -179,10 +427,27 @@ function normalizeUpstreamSimulation(data: unknown, simulationId: string): Simul
 
 /**
  * Generates a default ERPMetadata stub for lightweight requests.
+ * @param years Number of years of fiscal calendar to generate (default 7, covering 5yr projections).
  */
-function generateDefaultERPMetadata(currency: string): ERPMetadata {
+function generateDefaultERPMetadata(currency: string, years: number = 7): ERPMetadata {
   const now = new Date().toISOString();
   const currentYear = new Date().getFullYear();
+
+  // Generate fiscal calendar periods covering currentYear through currentYear + years
+  const fiscalCalendar: Array<{ year: number; period: number; startDate: string; endDate: string }> = [];
+  for (let y = 0; y < years; y++) {
+    const year = currentYear + y;
+    for (let month = 1; month <= 12; month++) {
+      const startDate = new Date(Date.UTC(year, month - 1, 1));
+      const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      fiscalCalendar.push({
+        year,
+        period: month,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      });
+    }
+  }
 
   return {
     erpSystem: 'default',
@@ -226,80 +491,7 @@ function generateDefaultERPMetadata(currency: string): ERPMetadata {
         isActive: true,
       },
     ],
-    fiscalCalendar: [
-      {
-        year: currentYear,
-        period: 1,
-        startDate: `${currentYear}-01-01T00:00:00.000Z`,
-        endDate: `${currentYear}-01-31T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 2,
-        startDate: `${currentYear}-02-01T00:00:00.000Z`,
-        endDate: `${currentYear}-02-28T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 3,
-        startDate: `${currentYear}-03-01T00:00:00.000Z`,
-        endDate: `${currentYear}-03-31T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 4,
-        startDate: `${currentYear}-04-01T00:00:00.000Z`,
-        endDate: `${currentYear}-04-30T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 5,
-        startDate: `${currentYear}-05-01T00:00:00.000Z`,
-        endDate: `${currentYear}-05-31T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 6,
-        startDate: `${currentYear}-06-01T00:00:00.000Z`,
-        endDate: `${currentYear}-06-30T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 7,
-        startDate: `${currentYear}-07-01T00:00:00.000Z`,
-        endDate: `${currentYear}-07-31T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 8,
-        startDate: `${currentYear}-08-01T00:00:00.000Z`,
-        endDate: `${currentYear}-08-31T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 9,
-        startDate: `${currentYear}-09-01T00:00:00.000Z`,
-        endDate: `${currentYear}-09-30T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 10,
-        startDate: `${currentYear}-10-01T00:00:00.000Z`,
-        endDate: `${currentYear}-10-31T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 11,
-        startDate: `${currentYear}-11-01T00:00:00.000Z`,
-        endDate: `${currentYear}-11-30T23:59:59.999Z`,
-      },
-      {
-        year: currentYear,
-        period: 12,
-        startDate: `${currentYear}-12-01T00:00:00.000Z`,
-        endDate: `${currentYear}-12-31T23:59:59.999Z`,
-      },
-    ],
+    fiscalCalendar,
     reportingCurrency: currency,
   };
 }

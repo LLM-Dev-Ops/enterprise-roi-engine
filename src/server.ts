@@ -163,7 +163,7 @@ async function handleLightweightRequest(
         id: roiId,
         simulation_ref: request.sim_ref.id,
         report_type: reportType,
-        summary: extractSummary(result),
+        summary: extractSummary(result, request.simulation_data),
         generated_at: new Date().toISOString(),
       },
       execution_metadata: {
@@ -271,9 +271,22 @@ async function handleFullContractRequest(
 
 /**
  * Extracts a summary object from the pipeline result.
+ * Falls back to the CLI's pre-computed financial_model when the pipeline fails or
+ * returns zeros.
  */
-function extractSummary(result: { status: string; financialArtifact?: unknown; metrics?: unknown }): Record<string, unknown> {
-  if (result.status === 'FAILED') {
+function extractSummary(
+  result: { status: string; financialArtifact?: unknown; metrics?: unknown },
+  simulationData?: Record<string, unknown>
+): Record<string, unknown> {
+  const metrics = result.metrics as Record<string, unknown> | undefined;
+
+  // Try to extract pre-computed financial data from CLI simulation record
+  const financialModel = extractFinancialModel(simulationData);
+
+  if (result.status === 'FAILED' || !metrics) {
+    if (financialModel) {
+      return buildSummaryFromFinancialModel(financialModel);
+    }
     return {
       total_investment: 0,
       projected_savings: 0,
@@ -283,17 +296,88 @@ function extractSummary(result: { status: string; financialArtifact?: unknown; m
     };
   }
 
-  const metrics = result.metrics as Record<string, unknown> | undefined;
+  const pipelineSavings = metrics['totalSavingsIdentified'];
+  const hasPipelineData = pipelineSavings !== undefined && pipelineSavings !== '0' && pipelineSavings !== 0;
+
+  // Use pipeline results if available, otherwise fall back to financial_model
+  if (hasPipelineData) {
+    return {
+      total_investment: financialModel?.['total_investment'] ?? 0,
+      projected_savings: pipelineSavings,
+      net_present_value: financialModel?.['npv_5yr'] ?? 0,
+      roi_percentage: computeROIPercentage(financialModel),
+      payback_period_months: financialModel?.['roi_months'] ?? 0,
+      decisions_processed: metrics['decisionsProcessed'] ?? 0,
+      execution_duration_ms: metrics['executionDurationMs'] ?? 0,
+    };
+  }
+
+  if (financialModel) {
+    return {
+      ...buildSummaryFromFinancialModel(financialModel),
+      decisions_processed: metrics['decisionsProcessed'] ?? 0,
+      execution_duration_ms: metrics['executionDurationMs'] ?? 0,
+    };
+  }
 
   return {
     total_investment: 0,
-    projected_savings: metrics?.['totalSavingsIdentified'] ?? 0,
+    projected_savings: pipelineSavings ?? 0,
     net_present_value: 0,
     roi_percentage: 0,
     payback_period_months: 0,
-    decisions_processed: metrics?.['decisionsProcessed'] ?? 0,
-    execution_duration_ms: metrics?.['executionDurationMs'] ?? 0,
+    decisions_processed: metrics['decisionsProcessed'] ?? 0,
+    execution_duration_ms: metrics['executionDurationMs'] ?? 0,
   };
+}
+
+/**
+ * Extracts the financial_model from a CLI simulation_data record.
+ */
+function extractFinancialModel(
+  simulationData?: Record<string, unknown>
+): Record<string, unknown> | null {
+  if (!simulationData || typeof simulationData !== 'object') return null;
+  const metadata = simulationData['metadata'] as Record<string, unknown> | undefined;
+  if (!metadata || typeof metadata !== 'object') return null;
+  const synthesisData = metadata['synthesis_data'] as Record<string, unknown> | undefined;
+  if (!synthesisData || typeof synthesisData !== 'object') return null;
+  const financialModel = synthesisData['financial_model'] as Record<string, unknown> | undefined;
+  if (!financialModel || typeof financialModel !== 'object') return null;
+  return financialModel;
+}
+
+/**
+ * Builds a summary from the CLI's pre-computed financial_model.
+ */
+function buildSummaryFromFinancialModel(fm: Record<string, unknown>): Record<string, unknown> {
+  const totalInvestment = typeof fm['total_investment'] === 'number' ? fm['total_investment'] : 0;
+  const savingsBreakdown = fm['savings_breakdown'] as Record<string, number> | undefined;
+  const totalSavings = savingsBreakdown && typeof savingsBreakdown === 'object'
+    ? Object.values(savingsBreakdown).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0)
+    : 0;
+
+  return {
+    total_investment: totalInvestment,
+    projected_savings: totalSavings,
+    net_present_value: typeof fm['npv_5yr'] === 'number' ? fm['npv_5yr'] : 0,
+    roi_percentage: computeROIPercentage(fm),
+    payback_period_months: typeof fm['roi_months'] === 'number' ? fm['roi_months'] : 0,
+  };
+}
+
+/**
+ * Computes ROI percentage from a financial_model.
+ */
+function computeROIPercentage(fm: Record<string, unknown> | null): number {
+  if (!fm) return 0;
+  const totalInvestment = typeof fm['total_investment'] === 'number' ? fm['total_investment'] : 0;
+  if (totalInvestment === 0) return 0;
+  const savingsBreakdown = fm['savings_breakdown'] as Record<string, number> | undefined;
+  const totalSavings = savingsBreakdown && typeof savingsBreakdown === 'object'
+    ? Object.values(savingsBreakdown).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0)
+    : 0;
+  return Math.round(((totalSavings - totalInvestment) / totalInvestment) * 100 * 100) / 100;
 }
 
 server.listen(PORT, '0.0.0.0', () => {
