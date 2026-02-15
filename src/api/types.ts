@@ -52,6 +52,39 @@ export interface APIRequest {
 }
 
 /**
+ * Simulation reference for lightweight CLI-driven requests.
+ */
+export interface SimRef {
+  readonly id: string;
+  readonly type?: string;
+}
+
+/**
+ * Lightweight request body for CLI-driven ROI calculation.
+ * Accepts a simulation reference ID and resolves full data server-side.
+ */
+export interface LightweightROIRequest extends APIRequest {
+  readonly sim_ref: SimRef;
+  readonly report_type?: 'cfo-grade' | 'executive-summary' | 'technical-deep-dive' | 'full' | 'summary' | 'comparison';
+  readonly time_horizon?: 'quarterly' | 'annual' | '3-year' | '5-year' | '1y' | '3y' | '5y';
+  readonly currency?: string;
+  readonly options?: CalculationOptions;
+}
+
+/**
+ * Type guard to detect lightweight sim_ref requests.
+ */
+export function isLightweightRequest(body: unknown): body is LightweightROIRequest {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    'sim_ref' in body &&
+    typeof (body as Record<string, unknown>)['sim_ref'] === 'object' &&
+    !('simulation' in body)
+  );
+}
+
+/**
  * Request body for the /calculate endpoint.
  * Contains all inputs needed for ROI calculation.
  */

@@ -2,30 +2,86 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://agentics.ai/contracts/roi/v1/request.schema.json",
   "title": "ROI Engine Request",
-  "description": "Schema for incoming ROI calculation requests to the enterprise-roi-engine",
+  "description": "Schema for incoming ROI calculation requests to the enterprise-roi-engine. Accepts either the full contract (simulation + erpMetadata + costBaseline) or a lightweight sim_ref format for CLI-driven workflows.",
   "type": "object",
-  "required": ["simulation", "erpMetadata", "costBaseline"],
-  "additionalProperties": false,
-  "properties": {
-    "correlationId": {
-      "type": "string",
-      "pattern": "^[a-zA-Z0-9-]{1,64}$",
-      "description": "Correlation ID for distributed tracing"
+  "oneOf": [
+    {
+      "required": ["simulation", "erpMetadata", "costBaseline"],
+      "additionalProperties": false,
+      "properties": {
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9-]{1,64}$",
+          "description": "Correlation ID for distributed tracing"
+        },
+        "simulation": {
+          "$ref": "#/$defs/SimulationOutput"
+        },
+        "erpMetadata": {
+          "$ref": "#/$defs/ERPMetadata"
+        },
+        "costBaseline": {
+          "$ref": "#/$defs/CostBaseline"
+        },
+        "options": {
+          "$ref": "#/$defs/CalculationOptions"
+        }
+      }
     },
-    "simulation": {
-      "$ref": "#/$defs/SimulationOutput"
-    },
-    "erpMetadata": {
-      "$ref": "#/$defs/ERPMetadata"
-    },
-    "costBaseline": {
-      "$ref": "#/$defs/CostBaseline"
-    },
-    "options": {
-      "$ref": "#/$defs/CalculationOptions"
+    {
+      "required": ["sim_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9-]{1,64}$",
+          "description": "Correlation ID for distributed tracing"
+        },
+        "sim_ref": {
+          "$ref": "#/$defs/SimRef"
+        },
+        "report_type": {
+          "type": "string",
+          "enum": ["cfo-grade", "executive-summary", "technical-deep-dive", "full", "summary", "comparison"],
+          "default": "cfo-grade",
+          "description": "Type of ROI report to generate"
+        },
+        "time_horizon": {
+          "type": "string",
+          "enum": ["quarterly", "annual", "3-year", "5-year", "1y", "3y", "5y"],
+          "default": "annual",
+          "description": "Time horizon for the analysis"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "default": "USD",
+          "description": "ISO 4217 currency code for the report"
+        },
+        "options": {
+          "$ref": "#/$defs/CalculationOptions"
+        }
+      }
     }
-  },
+  ],
   "$defs": {
+    "SimRef": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Simulation reference ID from ruvector-service"
+        },
+        "type": {
+          "type": "string",
+          "description": "Reference type identifier"
+        }
+      }
+    },
     "SimulationOutput": {
       "type": "object",
       "required": ["metadata", "scenario", "decisions", "resourceDeltas", "workflowTraces", "confidenceIntervals"],
