@@ -50,7 +50,11 @@ export async function resolveSimulationData(
   const currency = request.currency ?? 'USD';
   const timeHorizonMonths = resolveTimeHorizonMonths(request.time_horizon);
 
-  const simulation = await fetchSimulation(simulationId);
+  // Use inline simulation_data if provided, otherwise fetch from ruvector
+  const simulation = (request.simulation_data && typeof request.simulation_data === 'object')
+    ? resolveInlineSimulation(request.simulation_data, simulationId)
+    : await fetchSimulation(simulationId);
+
   const erpMetadata = generateDefaultERPMetadata(currency);
   const costBaseline = generateDefaultCostBaseline(
     simulation.scenario.baselineId,
@@ -59,6 +63,24 @@ export async function resolveSimulationData(
   );
 
   return { simulation, erpMetadata, costBaseline };
+}
+
+/**
+ * Resolves inline simulation data into a SimulationOutput.
+ * Uses the data directly if it already matches the expected shape,
+ * otherwise normalizes it (same logic as the ruvector fetch path).
+ */
+function resolveInlineSimulation(data: Record<string, unknown>, simulationId: string): SimulationOutput {
+  // The inline payload may wrap the simulation in a data envelope
+  const unwrapped = ('data' in data && typeof data['data'] === 'object' && data['data'] !== null)
+    ? data['data']
+    : data;
+
+  if (isSimulationOutput(unwrapped)) {
+    return unwrapped as SimulationOutput;
+  }
+
+  return normalizeUpstreamSimulation(unwrapped, simulationId);
 }
 
 /**

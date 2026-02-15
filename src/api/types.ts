@@ -65,6 +65,7 @@ export interface SimRef {
  */
 export interface LightweightROIRequest extends APIRequest {
   readonly sim_ref: SimRef;
+  readonly simulation_data?: Record<string, unknown>;
   readonly report_type?: 'cfo-grade' | 'executive-summary' | 'technical-deep-dive' | 'full' | 'summary' | 'comparison';
   readonly time_horizon?: 'quarterly' | 'annual' | '3-year' | '5-year' | '1y' | '3y' | '5y';
   readonly currency?: string;
