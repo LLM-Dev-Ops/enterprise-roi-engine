@@ -1,47 +1,33 @@
 # Enterprise ROI Engine - Cloud Run Deployment
-FROM node:20-alpine AS builder
-
-# Install build dependencies for native modules
-RUN apk add --no-cache python3 make g++
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and install dependencies
 COPY package*.json ./
+RUN npm ci --legacy-peer-deps
 
-# Install all dependencies (including dev for build)
-RUN npm install --legacy-peer-deps
-
-# Copy source code
+# Copy source and build
 COPY tsconfig.json ./
 COPY src/ ./src/
 
 # Build TypeScript
-RUN npm run build
-
-# Prune dev dependencies for production
-RUN npm prune --production
+RUN npx tsc
 
 # Production stage
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Copy package.json for reference
 COPY package*.json ./
-
-# Copy node_modules from builder (already pruned to production)
-COPY --from=builder /app/node_modules ./node_modules
+RUN npm ci --omit=dev --legacy-peer-deps
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Set environment variables
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Expose port
 EXPOSE 8080
 
-# Run the server
 CMD ["node", "dist/server.js"]
