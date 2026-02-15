@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 # Copy source and build
 COPY tsconfig.json ./
@@ -20,7 +20,7 @@ FROM node:22-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev --legacy-peer-deps
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
