@@ -26,6 +26,7 @@ import {
 } from './contracts/validation';
 
 import type { ROIEngineRequest, LightweightROIRequest } from './api/types';
+import { fanOutPostExecution } from './hooks/post-execution';
 
 const PORT = parseInt(process.env['PORT'] || '8080', 10);
 
@@ -183,6 +184,7 @@ async function handleLightweightRequest(
       });
     } else {
       sendJSON(res, 200, response);
+      fanOutPostExecution(response.roi_report, response.execution_metadata);
     }
   } catch (error) {
     if (error instanceof SimulationResolverError) {
@@ -266,6 +268,7 @@ async function handleFullContractRequest(
     });
   } else {
     sendJSON(res, 200, response);
+    fanOutPostExecution(response.roi_report, response.execution_metadata);
   }
 }
 
