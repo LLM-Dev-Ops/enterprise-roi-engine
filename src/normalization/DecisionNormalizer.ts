@@ -96,7 +96,7 @@ const DECISION_TYPE_PATTERNS: ReadonlyArray<{
     glAccountTypes: [AccountType.EXPENSE],
   },
   {
-    pattern: /process.*optim|workflow.*improv|efficien|automat/i,
+    pattern: /process.*optim|optim.*process|workflow.*improv|efficien|automat/i,
     category: DecisionCategory.PROCESS_OPTIMIZATION,
     riskCategoryId: 'PROCESS_OPT',
     glAccountTypes: [AccountType.EXPENSE],
@@ -120,7 +120,7 @@ const DECISION_TYPE_PATTERNS: ReadonlyArray<{
     glAccountTypes: [AccountType.EXPENSE],
   },
   {
-    pattern: /cost.*reduc|savings|cut|eliminat|consolid/i,
+    pattern: /cost.*reduc|reduc.*cost|savings|cut|eliminat|consolid/i,
     category: DecisionCategory.COST_REDUCTION,
     riskCategoryId: 'COST_RED',
     glAccountTypes: [AccountType.EXPENSE],
@@ -510,20 +510,22 @@ export class DecisionNormalizer {
       return [];
     }
 
-    // Calculate current total
-    const total = allocations.reduce((sum, a) => sum + a.allocationPercentage, 0);
+    // Canonicalize before assigning the rounding remainder, including the
+    // already-normalized path. Never mutate the caller's readonly input.
+    const sorted = [...allocations].sort((a, b) => a.costCenterId.localeCompare(b.costCenterId));
+    const total = sorted.reduce((sum, a) => sum + a.allocationPercentage, 0);
 
     // If already 100%, return as-is
     if (Math.abs(total - 100) < 0.001) {
-      return allocations;
+      return sorted;
     }
 
     // Normalize to 100%
     const factor = 100 / total;
     let runningTotal = 0;
 
-    const normalized = allocations.map((allocation, index) => {
-      if (index === allocations.length - 1) {
+    const normalized = sorted.map((allocation, index) => {
+      if (index === sorted.length - 1) {
         // Last allocation gets the remainder to ensure exact 100%
         return {
           ...allocation,

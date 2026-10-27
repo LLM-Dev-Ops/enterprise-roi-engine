@@ -619,6 +619,26 @@ describe('DecisionNormalizer', () => {
   // ============================================================================
 
   describe('normalizeAllocations', () => {
+    it('canonicalizes a normalized input without mutating it', () => {
+      const allocations = Object.freeze([
+        Object.freeze({ costCenterId: 'CC002', allocationPercentage: 40, allocationMethod: AllocationMethod.DIRECT }),
+        Object.freeze({ costCenterId: 'CC001', allocationPercentage: 60, allocationMethod: AllocationMethod.DIRECT }),
+      ]);
+      const result = decisionNormalizer.normalizeAllocations(allocations);
+      expect(result.map(a => a.costCenterId)).toEqual(['CC001', 'CC002']);
+      expect(allocations.map(a => a.costCenterId)).toEqual(['CC002', 'CC001']);
+      expect(result).not.toBe(allocations);
+    });
+
+    it('assigns the same rounding remainder across input permutations', () => {
+      const allocations = ['CC003', 'CC001', 'CC002'].map(costCenterId => ({
+        costCenterId, allocationPercentage: 1, allocationMethod: AllocationMethod.DIRECT,
+      }));
+      const result = decisionNormalizer.normalizeAllocations(allocations);
+      expect(decisionNormalizer.normalizeAllocations([...allocations].reverse())).toEqual(result);
+      expect(result.reduce((sum, a) => sum + a.allocationPercentage, 0)).toBe(100);
+    });
+
     it('should return empty array for empty input', () => {
       const result = decisionNormalizer.normalizeAllocations([]);
       expect(result).toEqual([]);
