@@ -29,18 +29,34 @@ import type { ROIEngineRequest, LightweightROIRequest } from './api/types';
 import { fanOutPostExecution } from './hooks/post-execution';
 
 const PORT = parseInt(process.env['PORT'] || '8080', 10);
+const MAX_BODY_BYTES = 1_048_576;
+
+class BodyTooLarge extends Error {}
 
 function parseBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', () => resolve(body));
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let exceeded = false;
+    req.on('data', (chunk: Buffer) => {
+      if (exceeded) return;
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        exceeded = true;
+        chunks.length = 0;
+        reject(new BodyTooLarge());
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => { if (!exceeded) resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('aborted', () => reject(new Error('request_aborted')));
     req.on('error', reject);
   });
 }
 
 function sendJSON(res: http.ServerResponse, statusCode: number, data: unknown): void {
-  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  res.writeHead(statusCode, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(data));
 }
 
@@ -65,8 +81,11 @@ function reportTypeToRiskTolerance(
 // Force re-creation of the contract validator so it picks up the updated schema
 resetContractValidator();
 
-const server = http.createServer(async (req, res) => {
-  const correlationId = (req.headers['x-correlation-id'] as string) ?? uuidv4();
+export function createServer(): http.Server {
+return http.createServer(async (req, res) => {
+  const suppliedId = req.headers['x-correlation-id'];
+  const correlationId = typeof suppliedId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(suppliedId)
+    ? suppliedId : uuidv4();
 
   // Health check endpoint
   if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
@@ -79,6 +98,17 @@ const server = http.createServer(async (req, res) => {
 
   // ROI analysis endpoint
   if (req.method === 'POST' && req.url === '/v1/roi') {
+    if (req.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {
+      req.resume();
+      sendJSON(res, 415, { error: 'Content-Type must be application/json' });
+      return;
+    }
+    const length = req.headers['content-length'];
+    if (length !== undefined && Number(length) > MAX_BODY_BYTES) {
+      req.resume();
+      sendJSON(res, 413, { error: 'Request body exceeds size limit' });
+      return;
+    }
     try {
       const body = await parseBody(req);
       let parsedBody: unknown;
@@ -96,6 +126,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      if (parsedBody === null || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+        sendJSON(res, 400, { error: 'Request body must be a JSON object' });
+        return;
+      }
+
       // Detect request mode: lightweight sim_ref vs full contract
       if (isLightweightRequest(parsedBody)) {
         await handleLightweightRequest(parsedBody, correlationId, res);
@@ -103,9 +138,8 @@ const server = http.createServer(async (req, res) => {
         await handleFullContractRequest(parsedBody, correlationId, res);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      sendJSON(res, 500, {
-        error: message,
+      sendJSON(res, error instanceof BodyTooLarge ? 413 : 500, {
+        error: error instanceof BodyTooLarge ? 'Request body exceeds size limit' : 'Internal server error',
         execution_metadata: {
           trace_id: correlationId,
           timestamp: new Date().toISOString(),
@@ -119,6 +153,7 @@ const server = http.createServer(async (req, res) => {
   // 404 for all other routes
   sendJSON(res, 404, { error: 'Not found' });
 });
+}
 
 /**
  * Handles the lightweight sim_ref intake mode.
@@ -190,7 +225,7 @@ async function handleLightweightRequest(
     if (error instanceof SimulationResolverError) {
       const statusCode = error.code === 'FETCH_ERROR' ? 502 : 504;
       sendJSON(res, statusCode, {
-        error: error.message,
+        error: error.code === 'FETCH_ERROR' ? 'Upstream request failed' : 'Upstream request timed out',
         error_code: error.code,
         execution_metadata: {
           trace_id: correlationId,
@@ -383,6 +418,8 @@ function computeROIPercentage(fm: Record<string, unknown> | null): number {
   return Math.round(((totalSavings - totalInvestment) / totalInvestment) * 100 * 100) / 100;
 }
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`ROI Engine server listening on port ${PORT}`);
-});
+if (require.main === module) {
+  createServer().listen(PORT, '0.0.0.0', () => {
+    console.log(`ROI Engine server listening on port ${PORT}`);
+  });
+}
