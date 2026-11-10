@@ -1,0 +1,255 @@
+{
+  "regressions": [],
+  "baseline": {
+    "passed": 920,
+    "failed": 32,
+    "total": 952,
+    "failures": [
+      "CostBaselineIngestor ingest() null and undefined handling should handle null payload",
+      "CostBaselineIngestor ingest() null and undefined handling should handle undefined payload",
+      "RiskAttributor calculateRiskFactor risk components should return correct risk components breakdown",
+      "TemporalAligner mapDateToPeriod should return day of period correctly",
+      "TemporalAligner mapDateToPeriod should handle first day of period",
+      "TemporalAligner mapDateToPeriod should handle last day of period",
+      "TemporalAligner alignTimeHorizon should align simulation time horizon with fiscal calendar",
+      "TemporalAligner alignTimeHorizon should include all periods in the horizon",
+      "TemporalAligner alignTimeHorizon should throw for horizon outside calendar range",
+      "TemporalAligner validateTimeHorizon should return error for start date outside calendar",
+      "TemporalAligner validateTimeHorizon should return error for end date outside calendar",
+      "TemporalAligner calculateProRataFactor should return 0.0 remaining on last day",
+      "TemporalAligner getMonthsBetween should return 0 for same month",
+      "TemporalAligner simulationPeriodToFiscal should convert simulation period index to fiscal period",
+      "TemporalAligner simulationPeriodToFiscal should return correct period for later simulation periods",
+      "TemporalAligner simulationPeriodToFiscal should handle cross-year simulation periods",
+      "UnitHarmonizer convertCurrency should triangulate through base currency when needed",
+      "UnitHarmonizer edge cases should handle very small decimal amounts",
+      "SchemaValidator validateFinancialArtifact should reject artifact with invalid checksum format",
+      "ROICalculator calculateAnnualizedROI should handle negative ROI (loss) correctly",
+      "SensitivityEngine generateStandardFactors should include discount rate factor",
+      "NPVEngine calculatePresentValue should maintain precision",
+      "NPVEngine calculateTimeAdjustedDelta should handle zero discount rate",
+      "NPVEngine Mathematical Accuracy should correctly discount a single future payment",
+      "NPVEngine Edge Cases should handle very high discount rate",
+      "NPVEngine Edge Cases should handle very low discount rate",
+      "BenefitAttributor distributeBenefits normalization should handle zero total percentage by distributing equally",
+      "EntityNormalizer getDescendants should return all descendants of a cost center",
+      "EntityNormalizer getDescendants should return descendants in sorted order",
+      "EntityNormalizer getPrimaryCostCenter should return first cost center if no primary is marked",
+      "SummaryGenerator edge cases should handle negative values correctly",
+      "AuditTrailGenerator computeHash standalone function should handle null and undefined"
+    ]
+  },
+  "candidate": {
+    "passed": 921,
+    "failed": 31,
+    "total": 952,
+    "failures": [
+      "CostBaselineIngestor ingest() null and undefined handling should handle null payload",
+      "CostBaselineIngestor ingest() null and undefined handling should handle undefined payload",
+      "RiskAttributor calculateRiskFactor risk components should return correct risk components breakdown",
+      "TemporalAligner mapDateToPeriod should return day of period correctly",
+      "TemporalAligner mapDateToPeriod should handle first day of period",
+      "TemporalAligner mapDateToPeriod should handle last day of period",
+      "TemporalAligner alignTimeHorizon should align simulation time horizon with fiscal calendar",
+      "TemporalAligner alignTimeHorizon should include all periods in the horizon",
+      "TemporalAligner alignTimeHorizon should throw for horizon outside calendar range",
+      "TemporalAligner validateTimeHorizon should return error for start date outside calendar",
+      "TemporalAligner validateTimeHorizon should return error for end date outside calendar",
+      "TemporalAligner calculateProRataFactor should return 0.0 remaining on last day",
+      "TemporalAligner getMonthsBetween should return 0 for same month",
+      "TemporalAligner simulationPeriodToFiscal should convert simulation period index to fiscal period",
+      "TemporalAligner simulationPeriodToFiscal should return correct period for later simulation periods",
+      "TemporalAligner simulationPeriodToFiscal should handle cross-year simulation periods",
+      "UnitHarmonizer convertCurrency should triangulate through base currency when needed",
+      "UnitHarmonizer edge cases should handle very small decimal amounts",
+      "SchemaValidator validateFinancialArtifact should reject artifact with invalid checksum format",
+      "ROICalculator calculateAnnualizedROI should handle negative ROI (loss) correctly",
+      "SensitivityEngine generateStandardFactors should include discount rate factor",
+      "NPVEngine calculatePresentValue should maintain precision",
+      "NPVEngine calculateTimeAdjustedDelta should handle zero discount rate",
+      "NPVEngine Mathematical Accuracy should correctly discount a single future payment",
+      "NPVEngine Edge Cases should handle very high discount rate",
+      "NPVEngine Edge Cases should handle very low discount rate",
+      "BenefitAttributor distributeBenefits normalization should handle zero total percentage by distributing equally",
+      "EntityNormalizer getDescendants should return all descendants of a cost center",
+      "EntityNormalizer getDescendants should return descendants in sorted order",
+      "EntityNormalizer getPrimaryCostCenter should return first cost center if no primary is marked",
+      "SummaryGenerator edge cases should handle negative values correctly"
+    ]
+  },
+  "trials": [
+    {
+      "i": 0,
+      "root": "/tmp/roi-eve-frozen",
+      "exit": 1,
+      "holdout": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "anchors": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "i": 0,
+      "root": "/tmp/roi-eve-exact",
+      "exit": 0,
+      "holdout": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "anchors": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "i": 1,
+      "root": "/tmp/roi-eve-exact",
+      "exit": 0,
+      "holdout": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "anchors": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "i": 1,
+      "root": "/tmp/roi-eve-frozen",
+      "exit": 1,
+      "holdout": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "anchors": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "i": 2,
+      "root": "/tmp/roi-eve-frozen",
+      "exit": 1,
+      "holdout": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "anchors": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "i": 2,
+      "root": "/tmp/roi-eve-exact",
+      "exit": 0,
+      "holdout": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "anchors": [
+        true,
+        true,
+        true,
+        true
+      ]
+    }
+  ],
+  "inverse": {
+    "path": "src/export/AuditTrailGenerator.ts",
+    "parentBytes": "/**\n * Audit Trail Generator\n * Produces complete provenance records for financial calculations.\n *\n * SPARC: Ensures CFO-grade auditability with cryptographic verification.\n */\n\nimport * as crypto from 'crypto';\nimport { AuditRecord } from '../contracts';\n\n// ============================================================================\n// Types\n// ============================================================================\n\nexport interface AuditStep {\n  readonly operation: string;\n  readonly inputData: unknown;\n  readonly outputData: unknown;\n  readonly details?: Record<string, unknown>;\n}\n\nexport interface AuditTrailGeneratorOptions {\n  readonly includeFullData?: boolean;\n  readonly maxDetailSize?: number;\n}\n\n// ============================================================================\n// Helper Functions\n// ============================================================================\n\n/**\n * Computes SHA-256 hash of any data structure\n */\nfunction computeSHA256(data: unknown): string {\n  const json = typeof data === 'string' ? data : JSON.stringify(data, null, 0);\n  return crypto.createHash('sha256').update(json, 'utf8').digest('hex');\n}\n\n/**\n * Truncates details object to maximum size\n */\nfunction truncateDetails(\n  details: Record<string, unknown>,\n  maxSize: number\n): Record<string, unknown> {\n  const json = JSON.stringify(details);\n  if (json.length <= maxSize) {\n    return details;\n  }\n\n  // Create a summary version\n  return {\n    _truncated: true,\n    _originalSize: json.length,\n    _summary: Object.keys(details).slice(0, 10),\n  };\n}\n\n// ============================================================================\n// Audit Trail Generator Class\n// ============================================================================\n\nexport class AuditTrailGenerator {\n  private readonly records: AuditRecord[] = [];\n  private stepCounter: number = 0;\n  private readonly options: Required<AuditTrailGeneratorOptions>;\n\n  constructor(options: AuditTrailGeneratorOptions = {}) {\n    this.options = {\n      includeFullData: options.includeFullData ?? false,\n      maxDetailSize: options.maxDetailSize ?? 10000,\n    };\n  }\n\n  /**\n   * Records a transformation step in the audit trail\n   */\n  public recordStep(step: AuditStep): AuditRecord {\n    this.stepCounter++;\n\n    const inputHash = computeSHA256(step.inputData);\n    const outputHash = computeSHA256(step.outputData);\n\n    let details: Record<string, unknown> = step.details || {};\n\n    // Optionally include data summaries\n    if (this.options.includeFullData) {\n      details = {\n        ...details,\n        inputDataSummary: this.summarizeData(step.inputData),\n        outputDataSummary: this.summarizeData(step.outputData),\n      };\n    }\n\n    // Truncate if needed\n    details = truncateDetails(details, this.options.maxDetailSize);\n\n    const record: AuditRecord = {\n      stepNumber: this.stepCounter,\n      timestamp: new Date().toISOString(),\n      operation: step.operation,\n      inputHash,\n      outputHash,\n      details,\n    };\n\n    this.records.push(record);\n    return record;\n  }\n\n  /**\n   * Records the ingestion phase\n   */\n  public recordIngestion(\n    sourceSystem: string,\n    rawData: unknown,\n    normalizedData: unknown\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'INGESTION',\n      inputData: rawData,\n      outputData: normalizedData,\n      details: {\n        sourceSystem,\n        phase: 'ingestion',\n        description: 'Raw data ingested and parsed from source system',\n      },\n    });\n  }\n\n  /**\n   * Records the normalization phase\n   */\n  public recordNormalization(\n    rawRecords: unknown,\n    canonicalRecords: unknown,\n    recordCount: number\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'NORMALIZATION',\n      inputData: rawRecords,\n      outputData: canonicalRecords,\n      details: {\n        phase: 'normalization',\n        recordCount,\n        description: 'Records normalized to canonical decision format',\n      },\n    });\n  }\n\n  /**\n   * Records the delta calculation phase\n   */\n  public recordDeltaCalculation(\n    normalizedData: unknown,\n    deltaResults: unknown,\n    calculationMethod: string\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'DELTA_CALCULATION',\n      inputData: normalizedData,\n      outputData: deltaResults,\n      details: {\n        phase: 'calculation',\n        calculationMethod,\n        description: 'Financial deltas calculated with risk and time adjustments',\n      },\n    });\n  }\n\n  /**\n   * Records the risk adjustment phase\n   */\n  public recordRiskAdjustment(\n    grossDeltas: unknown,\n    riskAdjustedDeltas: unknown,\n    riskFactors: Record<string, number>\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'RISK_ADJUSTMENT',\n      inputData: grossDeltas,\n      outputData: riskAdjustedDeltas,\n      details: {\n        phase: 'risk_adjustment',\n        riskFactors,\n        description: 'Deltas adjusted for risk and uncertainty factors',\n      },\n    });\n  }\n\n  /**\n   * Records the time value adjustment phase\n   */\n  public recordTimeValueAdjustment(\n    riskAdjustedDeltas: unknown,\n    presentValueDeltas: unknown,\n    discountRate: number,\n    horizonMonths: number\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'TIME_VALUE_ADJUSTMENT',\n      inputData: riskAdjustedDeltas,\n      outputData: presentValueDeltas,\n      details: {\n        phase: 'time_value',\n        discountRate,\n        horizonMonths,\n        description: 'Deltas discounted to present value',\n      },\n    });\n  }\n\n  /**\n   * Records the attribution phase\n   */\n  public recordAttribution(\n    deltaResults: unknown,\n    attributionResults: unknown,\n    attributionMethod: string\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'ATTRIBUTION',\n      inputData: deltaResults,\n      outputData: attributionResults,\n      details: {\n        phase: 'attribution',\n        attributionMethod,\n        description: 'Deltas attributed to cost centers and GL accounts',\n      },\n    });\n  }\n\n  /**\n   * Records the confidence interval calculation phase\n   */\n  public recordConfidenceCalculation(\n    deltaResults: unknown,\n    confidenceResults: unknown,\n    confidenceLevels: readonly number[]\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'CONFIDENCE_CALCULATION',\n      inputData: deltaResults,\n      outputData: confidenceResults,\n      details: {\n        phase: 'confidence',\n        confidenceLevels: [...confidenceLevels],\n        description: 'Confidence intervals calculated for projections',\n      },\n    });\n  }\n\n  /**\n   * Records the artifact assembly phase\n   */\n  public recordArtifactAssembly(\n    allInputs: unknown,\n    artifact: unknown,\n    artifactId: string\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'ARTIFACT_ASSEMBLY',\n      inputData: allInputs,\n      outputData: artifact,\n      details: {\n        phase: 'assembly',\n        artifactId,\n        description: 'Financial artifact assembled from calculation results',\n      },\n    });\n  }\n\n  /**\n   * Records the validation phase\n   */\n  public recordValidation(\n    artifact: unknown,\n    validationResult: unknown,\n    passed: boolean\n  ): AuditRecord {\n    return this.recordStep({\n      operation: 'VALIDATION',\n      inputData: artifact,\n      outputData: validationResult,\n      details: {\n        phase: 'validation',\n        passed,\n        description: passed\n          ? 'Artifact passed schema validation'\n          : 'Artifact failed schema validation',\n      },\n    });\n  }\n\n  /**\n   * Records a custom operation\n   */\n  public recordCustomOperation(\n    operation: string,\n    inputData: unknown,\n    outputData: unknown,\n    details?: Record<string, unknown>\n  ): AuditRecord {\n    return this.recordStep({\n      operation,\n      inputData,\n      outputData,\n      details: {\n        phase: 'custom',\n        ...details,\n      },\n    });\n  }\n\n  /**\n   * Returns all recorded audit records\n   */\n  public getAuditTrail(): readonly AuditRecord[] {\n    return [...this.records];\n  }\n\n  /**\n   * Returns the current step count\n   */\n  public getStepCount(): number {\n    return this.stepCounter;\n  }\n\n  /**\n   * Resets the audit trail\n   */\n  public reset(): void {\n    this.records.length = 0;\n    this.stepCounter = 0;\n  }\n\n  /**\n   * Computes a checksum for the entire audit trail\n   */\n  public computeTrailChecksum(): string {\n    return computeSHA256(this.records);\n  }\n\n  /**\n   * Verifies the integrity of the audit trail\n   * Checks that step numbers are sequential and timestamps are ordered\n   */\n  public verifyIntegrity(): { valid: boolean; errors: string[] } {\n    const errors: string[] = [];\n\n    for (let i = 0; i < this.records.length; i++) {\n      const record = this.records[i]!;\n\n      // Check step number\n      if (record.stepNumber !== i + 1) {\n        errors.push(\n          `Step ${i + 1} has incorrect step number: ${record.stepNumber}`\n        );\n      }\n\n      // Check timestamp ordering\n      if (i > 0) {\n        const prevRecord = this.records[i - 1]!;\n        const prevTimestamp = new Date(prevRecord.timestamp);\n        const currTimestamp = new Date(record.timestamp);\n        if (currTimestamp < prevTimestamp) {\n          errors.push(\n            `Step ${record.stepNumber} has timestamp before previous step`\n          );\n        }\n      }\n\n      // Verify hash format\n      if (!/^[a-f0-9]{64}$/.test(record.inputHash)) {\n        errors.push(`Step ${record.stepNumber} has invalid input hash format`);\n      }\n      if (!/^[a-f0-9]{64}$/.test(record.outputHash)) {\n        errors.push(`Step ${record.stepNumber} has invalid output hash format`);\n      }\n    }\n\n    return {\n      valid: errors.length === 0,\n      errors,\n    };\n  }\n\n  // ============================================================================\n  // Private Helper Methods\n  // ============================================================================\n\n  private summarizeData(data: unknown): Record<string, unknown> {\n    if (data === null || data === undefined) {\n      return { type: 'null', value: null };\n    }\n\n    if (Array.isArray(data)) {\n      return {\n        type: 'array',\n        length: data.length,\n        firstItem: data.length > 0 ? typeof data[0] : null,\n      };\n    }\n\n    if (typeof data === 'object') {\n      const keys = Object.keys(data);\n      return {\n        type: 'object',\n        keyCount: keys.length,\n        keys: keys.slice(0, 10),\n      };\n    }\n\n    return {\n      type: typeof data,\n      preview: String(data).slice(0, 100),\n    };\n  }\n}\n\n// ============================================================================\n// Factory Function\n// ============================================================================\n\nexport function createAuditTrailGenerator(\n  options?: AuditTrailGeneratorOptions\n): AuditTrailGenerator {\n  return new AuditTrailGenerator(options);\n}\n\n// ============================================================================\n// Standalone Hash Function\n// ============================================================================\n\nexport function computeHash(data: unknown): string {\n  return computeSHA256(data);\n}\n",
+    "sha256": "bb57b45eb3ab39edf9d6b95135954e5987871877db5b47eb296c7fbca27b1894",
+    "verified": true
+  },
+  "pins": {
+    "node_modules/@metaharness/darwin": {
+      "version": "0.10.3",
+      "resolved": "https://registry.npmjs.org/@metaharness/darwin/-/darwin-0.10.3.tgz",
+      "integrity": "sha512-xqFWTqG8tHk2Gwts07EJgU2E7WANkhjwPc5Dk9nG3tbW8Hqb+O7Ut5ixp8+HoBlod8EgNigMT9MSrOpCpHSXEQ==",
+      "license": "MIT",
+      "bin": {
+        "metaharness-darwin": "dist/cli.js"
+      },
+      "engines": {
+        "node": ">=20.0.0"
+      }
+    },
+    "node_modules/@metaharness/flywheel": {
+      "version": "0.1.12",
+      "resolved": "https://registry.npmjs.org/@metaharness/flywheel/-/flywheel-0.1.12.tgz",
+      "integrity": "sha512-sfcgTRuXUay3qGinQpPkWZkI9IXWrDH209CvbJpzEFgOPaNgwsZjp4NOngAN5xzPUfuqC85AH7pcERa2KNvJsw==",
+      "license": "MIT"
+    },
+    "node_modules/metaharness": {
+      "version": "0.4.2",
+      "resolved": "https://registry.npmjs.org/metaharness/-/metaharness-0.4.2.tgz",
+      "integrity": "sha512-h94B47zBEuNEfKLFMZMV/fRnXBrkwV6L8kMukgioB/9621k6Lm6s2lR2gBKl3BAT1sfN/DYqhsqAJc+6H5PTGQ==",
+      "license": "MIT",
+      "dependencies": {
+        "@metaharness/darwin": "^0.2.2",
+        "@metaharness/flywheel": "^0.1.1",
+        "@metaharness/redblue": "^0.1.1",
+        "@metaharness/weight-eft": "^0.1.0",
+        "kolorist": "^1.8.0",
+        "prompts": "^2.4.2"
+      },
+      "bin": {
+        "harness": "dist/harness-bin.js",
+        "metaharness": "dist/bin.js"
+      },
+      "engines": {
+        "node": ">=20.0.0"
+      },
+      "optionalDependencies": {
+        "@ruvector/ruvllm": "^2.5.6"
+      },
+      "peerDependencies": {
+        "@metaharness/kernel": "^0.1.0"
+      },
+      "peerDependenciesMeta": {
+        "@metaharness/kernel": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/metaharness/node_modules/@metaharness/darwin": {
+      "version": "0.2.8",
+      "resolved": "https://registry.npmjs.org/@metaharness/darwin/-/darwin-0.2.8.tgz",
+      "integrity": "sha512-B8tF7IrrSxwKS6fEPEL6N2Juth9WWn+hppLUtUYPTJ2vcHzzZPIg2cS5T9qTyNNuANlTSWnQHnvzlfvYdGNfeQ==",
+      "license": "MIT",
+      "bin": {
+        "metaharness-darwin": "dist/cli.js"
+      },
+      "engines": {
+        "node": ">=20.0.0"
+      }
+    }
+  },
+  "lint": "npm warn Unknown env config \"http-proxy\". This will stop working in the next major version of npm.\n\n> enterprise-roi-engine@0.1.0 lint\n> eslint src --ext .ts\n\n\nOops! Something went wrong! :(\n\nESLint: 8.57.1\n\nESLint couldn't find a configuration file. To set up a configuration file for this project, please run:\n\n    npm init @eslint/config\n\nESLint looked for configuration files in /tmp/roi-nov9eve/src/agents and its ancestors. If it found none, it then looked in your home directory.\n\nIf you think you already have a configuration file or if you need more help, please stop by the ESLint Discord server: https://eslint.org/chat\n\n"
+}

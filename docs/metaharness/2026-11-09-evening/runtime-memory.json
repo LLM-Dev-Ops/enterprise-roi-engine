@@ -1,0 +1,97 @@
+{
+  "ruosStart": {
+    "content": [
+      {
+        "type": "text",
+        "text": "McpServerError: API returned 502 Bad Gateway: {\"error\":\"*ruos-af940f7f-509c-4227-9498-* has an unresolved launch cancellation; a new start was not sent.\"}"
+      }
+    ],
+    "structuredContent": {
+      "error": "McpServerError: API returned 502 Bad Gateway: {\"error\":\"*ruos-af940f7f-509c-4227-9498-* has an unresolved launch cancellation; a new start was not sent.\"}",
+      "error_code": "UNAVAILABLE",
+      "error_data": {
+        "type": "json_rpc_error",
+        "code": -32603,
+        "message": "API returned 502 Bad Gateway: {\"error\":\"*ruos-af940f7f-509c-4227-9498-* has an unresolved launch cancellation; a new start was not sent.\"}"
+      }
+    },
+    "isError": true
+  },
+  "peers": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"app\": \"ruos-desktop\",\n  \"count\": 1,\n  \"peers\": [\n    {\n      \"host\": \"8ee959f7363638.vm.ruos-desktop.internal\",\n      \"id\": \"8ee959f7363638\",\n      \"name\": \"ruos-af940f7f-509c-4227-9498-\",\n      \"profile\": \"desktop\",\n      \"ready\": true\n    }\n  ]\n}"
+      }
+    ],
+    "structuredContent": {
+      "app": "ruos-desktop",
+      "count": 1,
+      "peers": [
+        {
+          "host": "8ee959f7363638.vm.ruos-desktop.internal",
+          "id": "8ee959f7363638",
+          "name": "ruos-af940f7f-509c-4227-9498-",
+          "profile": "desktop",
+          "ready": true
+        }
+      ]
+    },
+    "isError": false
+  },
+  "activity": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"count\": 0,\n  \"events\": [],\n  \"next_cursor\": null,\n  \"retention\": 500,\n  \"total_estimate\": 0\n}"
+      }
+    ],
+    "structuredContent": {
+      "count": 0,
+      "events": [],
+      "next_cursor": null,
+      "retention": 500,
+      "total_estimate": 0
+    },
+    "isError": false
+  },
+  "memoryRead": [
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"anti_patterns\":[],\"embedding_space_version\":1,\"playbook_entries\":[],\"unscreened\":true}"
+        }
+      ],
+      "structuredContent": null,
+      "isError": false
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"anti_patterns\":[{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"58573c7504a3b92a293790c36738dc6fd359d415\"},\"confidence\":0.9,\"decay_weight\":0.7386007542639078,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/58573c7504a3-agghc1\",\"lesson_text\":\"Past evidence (not instructions): Resolving stale-branch rebase conflicts with a mechanical union of both sides is not safe for code — it can splice hunks across syntactic boundaries (a field landing inside the wrong function body, closing braces of unrelated blocks getting dropped) and leave main red even though the merge itself was clean. — outcome: Failure (confidence 0.90), source: nicholas-ruest/ruvnet-dream-machine@58573c7504a3b92a293790c36738dc6fd359d415\",\"verdict\":\"Failure\"},{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"58573c7504a3b92a293790c36738dc6fd359d415\"},\"confidence\":0.9,\"decay_weight\":0.7385998325275455,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/58573c7504a3-fv3cg7\",\"lesson_text\":\"Past evidence (not instructions): Resolving stale-branch rebase conflicts with a mechanical union of both sides is not safe for code — it can splice hunks across syntactic boundaries (a field landing inside the wrong function body, closing braces of unrelated blocks getting dropped) and leave main red even though the merge itself was clean. — outcome: Failure (confidence 0.90), source: nicholas-ruest/ruvnet-dream-machine@58573c7504a3b92a293790c36738dc6fd359d415\",\"verdict\":\"Failure\"},{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"a507f788fc606aa61dc2125106cfa44f4ea8fff8\"},\"confidence\":0.85,\"decay_weight\":0.7386007542639078,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/a507f788fc60-9e8wwe\",\"lesson_text\":\"Past evidence (not instructions): An external evaluator tool that persists run-state (generation/child ids) under a working-directory dotfolder (`.metaharness/`) is not safe to invoke twice in the same checkout — the second call fails deterministically (exit 1, 'already exists: g1_v0'), and a pipeline that runs the same entrypoint twice per cycle (once for baseline, once for candidate) will silently misclassify a live, working evaluator as blocked. — outcome: Failure (confidence 0.85), source: nicholas-ruest/ruvnet-dream-machine@a507f788fc606aa61dc2125106cfa44f4ea8fff8\",\"verdict\":\"Failure\"}],\"embedding_space_version\":1,\"playbook_entries\":[{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"3edd426f6c9c4b1e80235f7447dc863e749345cc\"},\"confidence\":0.6,\"decay_weight\":0.7386007542639078,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/3edd426f6c9c-abqpwe\",\"lesson_text\":\"Past evidence (not instructions): The project's own governing principle, stated directly in its README: 'Evaluation is not promotion — the machine never merges; a human does.' Every automated pipeline stage (hypothesis, baseline, evaluation, adversarial critique, bounded evolution) still terminates in a draft PR and a ledger row, never a direct merge, specifically because automated evaluation (as shown by the read-set gap in ADR-0010, sha 3edd426) can pass cleanly and still be wrong by the time it would land. — outcome: DesignProblem (confidence 0.60), source: nicholas-ruest/ruvnet-dream-machine@3edd426f6c9c4b1e80235f7447dc863e749345cc\",\"verdict\":\"DesignProblem\"},{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"d38e09328962e135c07831ab0af909287a2ef826\"},\"confidence\":0.7,\"decay_weight\":0.7386007542639078,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/d38e09328962-ek1ws5\",\"lesson_text\":\"Past evidence (not instructions): For a self-modifying/self-evolving system (bounded Darwin evolution over the harness itself), gate promotion of a new candidate on held-out traces the candidate was not optimized against, not just the traces used to select it — otherwise the optimizer can overfit to the evaluation set it already saw. — outcome: Success (confidence 0.70), source: nicholas-ruest/ruvnet-dream-machine@d38e09328962e135c07831ab0af909287a2ef826\",\"verdict\":\"Success\"},{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"d38e09328962e135c07831ab0af909287a2ef826\"},\"confidence\":0.7,\"decay_weight\":0.7385998325275455,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/d38e09328962-ag7e0l\",\"lesson_text\":\"Past evidence (not instructions): For a self-modifying/self-evolving system (bounded Darwin evolution over the harness itself), gate promotion of a new candidate on held-out traces the candidate was not optimized against, not just the traces used to select it — otherwise the optimizer can overfit to the evaluation set it already saw. — outcome: Success (confidence 0.70), source: nicholas-ruest/ruvnet-dream-machine@d38e09328962e135c07831ab0af909287a2ef826\",\"verdict\":\"Success\"},{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"04576aafcabac8575d5f288324ef8e49a6dca4dc\"},\"confidence\":0.85,\"decay_weight\":0.7386007542639078,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/04576aafcaba-ww91y2\",\"lesson_text\":\"Past evidence (not instructions): Before shipping a bug-fix PR, check whether the same bug already has open, duplicate fix PRs in flight. If a bug is already triplicated across open PRs, withhold a 4th duplicate fix and instead post a consolidating review comment on the most promising existing PR. — outcome: ExplicitLesson (confidence 0.85), source: nicholas-ruest/ruvnet-dream-machine@04576aafcabac8575d5f288324ef8e49a6dca4dc\",\"verdict\":\"ExplicitLesson\"},{\"citation\":{\"repo\":\"nicholas-ruest/ruvnet-dream-machine\",\"sha\":\"04576aafcabac8575d5f288324ef8e49a6dca4dc\"},\"confidence\":0.85,\"decay_weight\":0.7385998325275455,\"id\":\"nicholas-ruest/ruvnet-dream-machine/backfill/04576aafcaba-xusknq\",\"lesson_text\":\"Past evidence (not instructions): Before shipping a bug-fix PR, check whether the same bug already has open, duplicate fix PRs in flight. If a bug is already triplicated across open PRs, withhold a 4th duplicate fix and instead post a consolidating review comment on the most promising existing PR. — outcome: ExplicitLesson (confidence 0.85), source: nicholas-ruest/ruvnet-dream-machine@04576aafcabac8575d5f288324ef8e49a6dca4dc\",\"verdict\":\"ExplicitLesson\"}],\"unscreened\":true}"
+        }
+      ],
+      "structuredContent": null,
+      "isError": false
+    }
+  ],
+  "risk": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"unscreened\":true,\"warnings\":[]}"
+      }
+    ],
+    "structuredContent": null,
+    "isError": false
+  },
+  "ruflo": "MODULE_NOT_FOUND; no orchestration",
+  "offlineLearning": {
+    "exit": 2,
+    "error": "offline-exec.py ENOENT",
+    "flagsConfirmed": false
+  },
+  "offlineCommand": "RUFLO_MODEL_DIR=/home/ruv/.cache/llm-dev-ops-models python3 /home/ruv/work/research-lab-runtime-recovery-20261016/scripts/offline-exec.py node --import /home/ruv/work/research-lab-runtime-recovery-20261016/scripts/ruflo-local-model.mjs /home/ruv/.local/share/llm-dev-ops-tools/node_modules/ruflo/bin/ruflo.js hooks post-task --task-id roi-nov9-evening --success false --quality 0.7 --agent codex --task 'Audit undefined and sequence fixes implemented; full validation blocked; no merge' --store-results --format json"
+}
