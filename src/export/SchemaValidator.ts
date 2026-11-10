@@ -64,10 +64,20 @@ export interface SchemaValidatorOptions {
  * Converts ZodIssue to ValidationError
  */
 function zodIssueToValidationError(issue: ZodIssue): ValidationError {
+  // Schema failures return before semantic validation. Preserve the public
+  // diagnostic codes for the same constraint regardless of which gate finds it.
+  const field = issue.path[issue.path.length - 1];
+  const isAuditHash = field === 'inputHash' || field === 'outputHash';
+  const isSizeIssue = issue.code === 'too_small' || issue.code === 'too_big';
+  const code = isAuditHash && isSizeIssue && issue.type === 'string'
+    ? 'invalid_hash'
+    : field === 'allocationPercentage' && isSizeIssue && issue.type === 'number'
+      ? 'invalid_range'
+      : issue.code;
   const base: ValidationError = {
     path: issue.path.join('.'),
     message: issue.message,
-    code: issue.code,
+    code,
   };
 
   if ('expected' in issue && issue.expected !== undefined) {
@@ -687,3 +697,4 @@ export class SchemaValidationError extends Error {
     this.warnings = result.warnings;
   }
 }
+

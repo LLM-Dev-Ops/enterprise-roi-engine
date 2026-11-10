@@ -32,7 +32,10 @@ export interface AuditTrailGeneratorOptions {
  * Computes SHA-256 hash of any data structure
  */
 function computeSHA256(data: unknown): string {
-  const json = typeof data === 'string' ? data : JSON.stringify(data, null, 0);
+  // JSON.stringify(undefined) returns undefined, which Hash.update rejects.
+  // Preserve all existing raw-string/JSON hash bytes for supported values.
+  const json = data === undefined ? 'undefined'
+    : typeof data === 'string' ? data : JSON.stringify(data, null, 0);
   return crypto.createHash('sha256').update(json, 'utf8').digest('hex');
 }
 
@@ -76,8 +79,6 @@ export class AuditTrailGenerator {
    * Records a transformation step in the audit trail
    */
   public recordStep(step: AuditStep): AuditRecord {
-    this.stepCounter++;
-
     const inputHash = computeSHA256(step.inputData);
     const outputHash = computeSHA256(step.outputData);
 
@@ -96,7 +97,7 @@ export class AuditTrailGenerator {
     details = truncateDetails(details, this.options.maxDetailSize);
 
     const record: AuditRecord = {
-      stepNumber: this.stepCounter,
+      stepNumber: this.stepCounter + 1,
       timestamp: new Date().toISOString(),
       operation: step.operation,
       inputHash,
@@ -105,6 +106,7 @@ export class AuditTrailGenerator {
     };
 
     this.records.push(record);
+    this.stepCounter++;
     return record;
   }
 
